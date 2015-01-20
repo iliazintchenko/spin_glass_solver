@@ -1,4 +1,6 @@
 #include "sa_solver.hpp"
+#include <chrono>
+#include <random>
 
 sa_solver::sa_solver(const hamiltonian_type& H)
   : N_(H.size())
@@ -13,8 +15,27 @@ result sa_solver::run(
                     , const std::size_t seed
                     )
 {
+  // use system clock for seeding random number generator
+  auto myseed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+  
+  // instantiate a generator for random numbers
+  std::minstd_rand0 linear_congruential_generator;
+  linear_congruential_generator.seed(myseed);
+
+  // uniform [0,1] binary distribution
+  std::uniform_int_distribution<int> binaries(0, 1);
+  int dice_roll = binaries(linear_congruential_generator);
+
+  // uniform [0,1) double distribution
+  std::uniform_real_distribution<double> realnums(0.0, 1.0);
+  double d_roll = realnums(linear_congruential_generator);
+
+  // stop STL from reallocating space as vector grows
+  spins_.reserve(N_);
+
+  // generate N random binary states
   for(unsigned i = 0; i < N_; ++i)
-    spins_.push_back( drand48() < 0.5 ? 0 : 1);
+    spins_.push_back(binaries(linear_congruential_generator));
 
   double E = compute_energy();
 
@@ -22,7 +43,7 @@ result sa_solver::run(
     const double beta(beta0 + (beta1-beta0)/(Ns-1)*s);
     for(unsigned i = 0; i < N_; ++i){
       const double dE(delta_energy(i));
-      if(dE <= 0.0 || drand48() < std::exp(-beta*dE)){
+      if(dE <= 0.0 || realnums(linear_congruential_generator) < std::exp(-beta*dE)){
         spins_[i] = spins_[i] ^ 1;
         E += dE;
       }
@@ -33,6 +54,7 @@ result sa_solver::run(
   res.E_=E;
   res.spins_.swap(spins_);
   return res;
+
 }
 
 double sa_solver::compute_energy() const
