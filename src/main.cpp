@@ -1,3 +1,4 @@
+#define HPX_APPLICATION_STRING "spinsolve"
 // HPX includes (before boost)
 #include <hpx/hpx_init.hpp>
 #include <hpx/hpx.hpp>
@@ -9,32 +10,32 @@
 // STL includes
 #include <string>
 #include <iostream>
-#include <cassert>
+#include <chrono>
 
 // Solver related includes
 #include "hamiltonian.hpp"
 #include "result.hpp"
 #include "sa_solver.hpp"
 
-#define HPX_APPLICATION_STRING "Spin Glass Solver"
-// Configure application-specific options
+// Wrapping solver in an HPX framework
+#include "solver_wrapper.h"
+
+//----------------------------------------------------------------------------
+// Global vars and defs
+//----------------------------------------------------------------------------
 boost::program_options::options_description desc("Usage: " HPX_APPLICATION_STRING " [options]");
 
-// "D:\Code\spin_glass_solver\testdata\Instances128Spins\lattice\128random0.lat" 
-// "D:\Code\spin_glass_solver\testdata\Instances128Spins\results\128random0.lat" 10000 0.1 3.0 100
-// # infile=D:\Code\spin_glass_solver\testdata\Instances128Spins\lattice\128random0.lat Ns=10000 beta0=0.100000 beta1=3.000000 num_rep=100
+// example command line
+// "c:\Program Files\MPICH2\bin\mpiexec.exe" -localonly 1 bin\Debug\spinsolve.exe --repetitions=5 -N 2 -b 0.125 -e 4.1 -o D:\build\spinglass\test.txt
+// use --help to get this program help
+// use --hpx:help to get help on all options including hpx options
 
+//----------------------------------------------------------------------------
+// int main just sets up program options and then hands control to HPX
+// our main entry is hpx_main()
 //----------------------------------------------------------------------------
 int main(int argc, char* argv[])
 {
-
-  // Input: H is the Hamiltonian of the spin glass
-//        beta0 is the starting inverse temperature (use 0.1)
-//        beta1 is the ending inverse temperature (use 3.0)
-//        Ns is the number of Monte Carlo sweeps per run of SA
-//        seed initialized the random number generator, use a different one for each repetition
-// Output: Configuration of spins and energy
-
   desc.add_options()
     ("help,h", "Display command line options help");
   desc.add_options()
@@ -47,7 +48,7 @@ int main(int argc, char* argv[])
     "Specify the output file which will contain results of the solver");
   desc.add_options()
     ("Ns,N",
-    boost::program_options::value<boost::uint64_t>()->default_value(1000),
+    boost::program_options::value<uint64_t>()->default_value(1000),
     "Specify the number of Monte Carlo sweeps per run of Solver");
   desc.add_options()
     ("beta0,b",
@@ -59,18 +60,25 @@ int main(int argc, char* argv[])
     "beta1 is the ending inverse temperature");
   desc.add_options()
     ("repetitions,r",
-    boost::program_options::value<boost::uint64_t>()->default_value(1000),
+    boost::program_options::value<uint64_t>()->default_value(1000),
     "The number of repetitions to perform of the random solve");
+  desc.add_options()
+    ("complexity,c",
+    boost::program_options::value<double>()->default_value(1),
+    "A logarithmic estimate of the computational requirements of a single solve step\n"
+    "This figure is used as a helper to decide how to split up repetitions/iterations between threads\n"
+    );
 
   return hpx::init(desc, argc, argv);
 }
 
 //----------------------------------------------------------------------------
-// Note: int main() is used by HPX and our main entry is hpx_main()
-//----------------------------------------------------------------------------
-
-//----------------------------------------------------------------------------
-// 
+// Input: H is the Hamiltonian of the spin glass
+//        beta0 is the starting inverse temperature (use 0.1)
+//        beta1 is the ending inverse temperature (use 3.0)
+//        Ns is the number of Monte Carlo sweeps per run of SA
+//        seed initialized the random number generator, use a different one for each repetition
+// Output: Configuration of spins and energy
 //----------------------------------------------------------------------------
 int hpx_main(boost::program_options::variables_map& vm)
 {
@@ -100,10 +108,12 @@ int hpx_main(boost::program_options::variables_map& vm)
 
   const std::string infile  = vm["input"].as<std::string>();
   const std::string outfile = vm["output"].as<std::string>();
-  const unsigned Ns         = vm["Ns"].as<boost::uint64_t>();
+  const uint64_t Ns         = vm["Ns"].as<uint64_t>();
   const double beta0        = vm["beta0"].as<double>();
   const double beta1        = vm["beta1"].as<double>();
-  const unsigned num_rep    = vm["repetitions"].as<boost::uint64_t>();
+  const uint64_t num_rep    = vm["repetitions"].as<uint64_t>();
+  //
+  const double complexity   = vm["complexity"].as<double>();
 
   if (vm.count("help")) {
     if (rank==0) {
@@ -123,11 +133,35 @@ int hpx_main(boost::program_options::variables_map& vm)
     + " num_rep=" + std::to_string(num_rep)
     << std::endl;
 
+  typedef wrapped_solver_class<sa_solver> wrappedSolver;
+  wrappedSolver solver(H);
 
-  for (unsigned rep = 0; rep < num_rep; ++rep)
-    out << solve(H, beta0, beta1, Ns, rep);
+  // start timer
+  std::chrono::time_point<std::chrono::system_clock> start_calc, end_calc, start_io, end_io;
+  start_calc = std::chrono::system_clock::now();
 
+  // execute the solver
+  wrappedSolver::result_type x = solver.spawn(num_rep, beta0, beta1, Ns);
+
+  // stop timer
+  end_calc = std::chrono::system_clock::now();
+  std::chrono::duration<double> elapsed_seconds = end_calc-start_calc;
+  std::cout << "Calculation time: " << elapsed_seconds.count() << "s\n";
+
+  // start timer
+  start_io = std::chrono::system_clock::now();
+
+  // Write out vector to file 
+  // @TODO, make each task write out it's own results or collect?
+  std::copy(x.begin(), x.end(), std::ostream_iterator<sa_solver::result_type>(out));
   out.close();
+
+  // stop timer
+  end_io = std::chrono::system_clock::now();
+  elapsed_seconds = end_io-start_io;
+  std::cout << "IO time: " << elapsed_seconds.count() << "s\n";
+ 
+ 
 
   return hpx::finalize();
 }

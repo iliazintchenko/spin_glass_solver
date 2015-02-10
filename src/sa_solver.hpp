@@ -13,6 +13,8 @@ class sa_solver
 {
 public:
 
+  typedef result result_type;
+
   //initialise sa solver with hamiltonian
   sa_solver(const hamiltonian_type&);
 
