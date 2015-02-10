@@ -16,11 +16,11 @@ result sa_solver::run(
                     )
 {
   // use system clock for seeding random number generator
-  auto myseed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+  //auto seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
   
   // instantiate a generator for random numbers
   std::minstd_rand0 linear_congruential_generator;
-  linear_congruential_generator.seed(myseed);
+  linear_congruential_generator.seed(seed);
 
   // uniform [0,1] binary distribution
   std::uniform_int_distribution<int> binaries(0, 1);
