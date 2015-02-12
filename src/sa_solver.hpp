@@ -19,10 +19,15 @@ public:
   // empty constructor required by HPX factory create function
   sa_solver() : N_(0) { };
 
+  // Copy constructor we nned to kake new instances
+  sa_solver(const sa_solver &other) {
+    N_     = other.N_;
+    H_     = other.H_;
+    spins_ = other.spins_;
+  }
+
   // initialise sa solver with hamiltonian
   sa_solver(const hamiltonian_type&);
-
-  void setHamiltonian(const std::string &data);
 
   //single run of sa from random initial state on hamiltonian H_
   result run(const double, const double, const std::size_t, const std::size_t);

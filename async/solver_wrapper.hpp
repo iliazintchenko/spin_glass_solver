@@ -111,18 +111,14 @@ struct HPX_COMPONENT_EXPORT wrapped_solver_class : hpx::components::simple_compo
       // so we must only use threads which are from the same solver params for now
       bool ok = true;
       while (ok && !async_results.empty()) {
-//        std::cout << "Begin check : threads running " << async_results.size() << " : remaining " << remaining << std::endl;
         future_type &fut = async_results.front();
         if (fut.is_ready()) {
-//          std::cout << "Got one future " << std::endl;
           // the future completed, so put the result on our return vector
           repetition_results_vector.push_back(std::move(fut.get()));
           // and pop the completed future
           async_results.pop();
-//          std::cout << "After pop threads running " << async_results.size() << " : remaining " << remaining << std::endl;
         }
         else {
-//          std::cout << "future not ready ...." << std::endl;
           hpx::this_thread::sleep_for(boost::chrono::milliseconds(default_sleep));
           ok = false;
         }
@@ -136,10 +132,11 @@ struct HPX_COMPONENT_EXPORT wrapped_solver_class : hpx::components::simple_compo
 
   template <typename ...Args>
   typename T::result_type run_one(Args... args) {
-    //
-    //
-//    std::cout << "Running a single solve " << std::endl;
-    return _theSolver.run(args...);
+    // The solver class is not thread safe, so we cannot run N threads on the same instance
+    // create a copy of our internal solver for each new request
+    T newSolver = _theSolver;
+    // std::cout << "Running a single solve " << std::endl;
+    return newSolver.run(args...);
   }
 
   //
