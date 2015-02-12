@@ -85,26 +85,27 @@ struct HPX_COMPONENT_EXPORT wrapped_solver_class : hpx::components::simple_compo
     typedef hpx::future<typename T::result_type> future_type;
     std::queue<future_type> async_results;
 
-    std::cout << "Num_reps is " << num_reps << " num sweeps is " << arg<2, Args...>().get(args...) << std::endl;
+    std::cout
+        << "Num_reps is " << num_reps
+        << " num sweeps is " << arg<2, Args...>().get(args...)
+        << " OS threads is " << _os_threads << std::endl;
+
     uint64_t remaining = num_reps;
     uint64_t seed = 0;
     const int default_sleep = 100;
     while (!async_results.empty() || remaining>0) {
-      // as long as there are repetitions left, add new ones to the waiting queue
-      if (remaining>0) {
+      // as long as there are repetitions left and not too many launched
+      // add new ones to the waiting queue
+      // Use a guesstimate of how many threads per node to queue at a time
+      // @todo, work on some scheduling to find out what a good N is
+      const int THREAD_MULTIPLIER = 100;
+      while (remaining>0 && async_results.size()<(_os_threads * THREAD_MULTIPLIER)) {
         future_type fut = hpx::async(solve_step, agas_id, args..., seed + local_seed_offset);
         async_results.push( std::move(fut) );
         seed ++;
         remaining --;
       }
-      // if we have submitted more threads than are possible, then yield for a short time
-      // assume that N* num_threads on this machine is a good number to wait for
-      // @todo, work on some scheduling to find out what a good N is
-      if (async_results.size()>(_os_threads * 5)) {
-        // @todo, we should sleep for an amount which is about the same as the time taken for a solve step
-        hpx::this_thread::sleep_for(boost::chrono::milliseconds(default_sleep));
-//        std::cout << "Going to sleep : threads running " << async_results.size() << " : remaining " << remaining << std::endl;
-      }
+
       // if any of the threads have completed, pull them off the queue
       // @todo, if one thread takes much longer, finished jobs will be stuck in the queue
       // so we must only use threads which are from the same solver params for now
