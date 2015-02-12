@@ -103,6 +103,10 @@ target_link_libraries(spinsolve
 add_definitions(-DHPX_APPLICATION_EXPORTS)
 add_executable(testhpx attic/solver_wrapper.cxx)
 hpx_setup_target(testhpx)
+target_link_libraries(testhpx 
+    iostreams_component 
+    ${Boost_LIBRARIES}
+)
 
 #--------------------------------------------------
 # Install

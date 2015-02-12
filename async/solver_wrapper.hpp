@@ -10,7 +10,7 @@
 #include <cmath>
 
 template <class T>
-struct HPX_COMPONENT_EXPORT wrapped_solver_class : hpx::components::simple_component_base<wrapped_solver_class<T>>
+struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_solver_class<T>>
 {
   // this is the internal solver we are wrapping
   T                         _theSolver;
@@ -27,12 +27,8 @@ struct HPX_COMPONENT_EXPORT wrapped_solver_class : hpx::components::simple_compo
     get_hpx_info();
   };
 
-  // provide a default constructor, we need one for the component factory
-  // which will create instances for remote execution
-  wrapped_solver_class() {
-    std::cout << "Entering constructor " << std::endl;
-    get_hpx_info();
-  };
+  ~wrapped_solver_class() {
+  }
 
   // for scheduling, we store info about threads/ranks
   void get_hpx_info() {
@@ -150,7 +146,7 @@ struct HPX_COMPONENT_EXPORT wrapped_solver_class : hpx::components::simple_compo
   template <typename ...Args>
   struct run_one_action : hpx::actions::make_action<
     typename T::result_type (wrapped_solver_class<T>::*)(Args...),
-      &wrapped_solver_class<T>::run_one<Args...>, run_one_action<Args...> >
+      &wrapped_solver_class<T>::template run_one<Args...>, run_one_action<Args...> >
   {};
 };
 
