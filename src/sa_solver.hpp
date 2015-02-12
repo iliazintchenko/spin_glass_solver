@@ -1,6 +1,7 @@
 #ifndef SA_SOLVER_HPP
 #define SA_SOLVER_HPP
 
+#include <memory>
 #include "hamiltonian.hpp"
 #include "result.hpp"
 
@@ -15,8 +16,13 @@ public:
 
   typedef result result_type;
 
-  //initialise sa solver with hamiltonian
+  // empty constructor required by HPX factory create function
+  sa_solver() : N_(0) { };
+
+  // initialise sa solver with hamiltonian
   sa_solver(const hamiltonian_type&);
+
+  void setHamiltonian(const std::string &data);
 
   //single run of sa from random initial state on hamiltonian H_
   result run(const double, const double, const std::size_t, const std::size_t);
@@ -29,8 +35,8 @@ private:
   //compute energy change of flipping a spin
   double delta_energy(const unsigned) const;
 
-  const std::size_t N_;
-  const hamiltonian_type H_;
+   std::size_t N_;
+   std::shared_ptr<hamiltonian_type> H_;
   
   std::vector<int> spins_;
 };

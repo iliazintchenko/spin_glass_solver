@@ -18,7 +18,8 @@
 #include "sa_solver.hpp"
 
 // Wrapping solver in an HPX framework
-#include "solver_wrapper.h"
+#include "solver_wrapper.hpp"
+#include "solver_manager.hpp"
 
 //----------------------------------------------------------------------------
 // Global vars and defs
@@ -40,11 +41,11 @@ int main(int argc, char* argv[])
     ("help,h", "Display command line options help");
   desc.add_options()
     ("input,i",
-    boost::program_options::value<std::string>()->default_value("D:\\Code\\spin_glass_solver\\testdata\\Instances128Spins\\lattice\\128random0.lat"),
+    boost::program_options::value<std::string>()->default_value(SPINSOLVE_SOURCE_DIR "/testdata/Instances128Spins/lattice/128random0.lat"),
     "Specify the input file containing lattice with spin configuration");
   desc.add_options()
     ("output,o",
-    boost::program_options::value<std::string>()->default_value("D:\\Code\\spin_glass_solver\\testdata\\Instances128Spins\\results\\128random0.lat"),
+    boost::program_options::value<std::string>()->default_value(SPINSOLVE_BINARY_DIR "/128random0.lat"),
     "Specify the output file which will contain results of the solver");
   desc.add_options()
     ("Ns,N",
@@ -73,12 +74,17 @@ int main(int argc, char* argv[])
 }
 
 //----------------------------------------------------------------------------
-// Input: H is the Hamiltonian of the spin glass
-//        beta0 is the starting inverse temperature (use 0.1)
-//        beta1 is the ending inverse temperature (use 3.0)
-//        Ns is the number of Monte Carlo sweeps per run of SA
-//        seed initialized the random number generator, use a different one for each repetition
-// Output: Configuration of spins and energy
+// Runs SA with many inputfiles
+// Args : beta0 is the starting temperature of SA (use 0.1 for bimodal instances)
+//        beta1 is the ending temperature of SA (use 3.0 for bimodal instances)
+//        Ns is the number of Monte Carlo Sweeps within each run of SA
+//        num_rep is the number of repetitions of SA (with different seeds)
+//        inputfile is the filename describing the Hamiltonian H() of the spin glass
+//        outputfile is the file of Configuration of spins and energy
+//
+// Output: All written into outputfile (Energy and spin configuration for each repetition)
+//
+// Note: Seed of SA is the repetition number
 //----------------------------------------------------------------------------
 int hpx_main(boost::program_options::variables_map& vm)
 {
@@ -87,24 +93,12 @@ int hpx_main(boost::program_options::variables_map& vm)
   std::string name                      = hpx::get_locality_name();
   uint64_t nranks                       = hpx::get_num_localities().get();
   std::size_t current                   = hpx::get_worker_thread_num();
+  std::size_t const os_threads          = hpx::get_os_thread_count();
   std::vector<hpx::id_type> remotes     = hpx::find_remote_localities();
   std::vector<hpx::id_type> localities  = hpx::find_all_localities();
   //
   char const* msg = "hello world from OS-thread %1% on locality %2% rank %3% hostname %4%";
   std::cout << (boost::format(msg) % current % hpx::get_locality_id() % rank % name.c_str()) << std::endl;
-
-
-  // Runs SA with many inputfiles
-  // Input: beta0 is the starting temperature of SA (use 0.1 for bimodal instances)
-  //        beta1 is the ending temperature of SA (use 3.0 for bimodal instances)
-  //        Ns is the number of Monte Carlo Sweeps within each run of SA
-  //        num_rep is the number of repetitions of SA (with different seeds)
-  //        inputfile is the filename describing the Hamiltonian
-  //        outputfile is the file all the results are written
-  //
-  // Output: All written into outputfile (Energy and spin configuration for each repetition)
-  //
-  // Note: Seed of SA is the repetition number
 
   const std::string infile  = vm["input"].as<std::string>();
   const std::string outfile = vm["output"].as<std::string>();
@@ -121,10 +115,17 @@ int hpx_main(boost::program_options::variables_map& vm)
     }
     return hpx::finalize();
   }
+
+  //
+  // Load the hamiltonian
+  // @todo, add support for multiple solvers with their own H
+  //
   const hamiltonian_type H(infile);
 
+  //
+  // Prepare putput file
+  //
   std::ofstream out(outfile);
-
   out
     << "# infile=" + infile
     + " Ns=" + std::to_string(Ns)
@@ -133,15 +134,20 @@ int hpx_main(boost::program_options::variables_map& vm)
     + " num_rep=" + std::to_string(num_rep)
     << std::endl;
 
-  typedef wrapped_solver_class<sa_solver> wrappedSolver;
-  wrappedSolver solver(H);
+  //
+  // Create a globally registered manager object
+  //
+  solver_manager scheduler(H);
 
   // start timer
   std::chrono::time_point<std::chrono::system_clock> start_calc, end_calc, start_io, end_io;
   start_calc = std::chrono::system_clock::now();
 
   // execute the solver
-  wrappedSolver::result_type x = solver.spawn(num_rep, beta0, beta1, Ns);
+  solver_manager::solver_ptr wrappedSolver = scheduler.getSolver();
+  hpx::naming::id_type       _agas_Wrapper_id = scheduler.getId();
+
+  solver_manager::result_type x = wrappedSolver->spawn(_agas_Wrapper_id,num_rep, beta0, beta1, Ns);
 
   // stop timer
   end_calc = std::chrono::system_clock::now();

@@ -1,6 +1,21 @@
 cmake_minimum_required(VERSION 2.8)
 project(spin_glass_solver)
 
+# Setup cmake policies.
+foreach(p
+    CMP0012
+    CMP0013
+    CMP0014
+    CMP0022 # CMake 2.8.12
+    CMP0025 # CMake 3.0
+    CMP0043 # CMake 3.0
+    CMP0053 # CMake 3.1
+  )
+  if(POLICY ${p})
+    cmake_policy(SET ${p} NEW)
+  endif()
+endforeach()
+
 #--------------------------------------------------
 # Setup Output directories
 #--------------------------------------------------
@@ -21,11 +36,11 @@ SET (CMAKE_ARCHIVE_OUTPUT_DIRECTORY
 set(CMAKE_CXX_FLAGS "-std=c++11")
 
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-  set(CMAKE_BUILD_TYPE RELEASE)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -pedantic ")
+#  set(CMAKE_BUILD_TYPE RELEASE)
+#  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -pedantic ")
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-  set(CMAKE_BUILD_TYPE RELEASE)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -pedantic ")
+#  set(CMAKE_BUILD_TYPE RELEASE)
+#  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -pedantic ")
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 endif()
@@ -50,6 +65,19 @@ if (WIN32)
 endif()
 
 #--------------------------------------------------
+# Our multi-thread wrappers 
+#--------------------------------------------------
+include_directories(src)
+include_directories(async)
+
+#--------------------------------------------------
+# compile definitions 
+#--------------------------------------------------
+# use these for default input filenames and output locations
+add_definitions(-DSPINSOLVE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\")
+add_definitions(-DSPINSOLVE_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\")
+
+#--------------------------------------------------
 # Library
 #--------------------------------------------------
 add_library(solver STATIC 
@@ -59,24 +87,22 @@ add_library(solver STATIC
 )
 
 #--------------------------------------------------
-# Our multi-thread wrappers 
+# Exe
 #--------------------------------------------------
-include_directories(async)
+add_executable(spinsolve src/main.cpp)
+hpx_setup_target(spinsolve)
+target_link_libraries(spinsolve 
+    solver 
+    iostreams_component 
+    ${Boost_LIBRARIES}
+)
 
 #--------------------------------------------------
 # Exe
 #--------------------------------------------------
-add_executable(spinsolve src/main.cpp)
-message("Bloody boost lib ${Boost_LIBRARIES} is ${Boost_PROGRAM_OPTIONS_LIBRARY}")
-target_link_libraries(spinsolve 
-    solver 
-    hpx 
-    hpx_init 
-    hpx_serialization 
-    iostreams_component 
-    ${HPX_LIBRARIES} 
-    ${Boost_LIBRARIES}
-)
+add_definitions(-DHPX_APPLICATION_EXPORTS)
+add_executable(testhpx attic/solver_wrapper.cxx)
+hpx_setup_target(testhpx)
 
 #--------------------------------------------------
 # Install

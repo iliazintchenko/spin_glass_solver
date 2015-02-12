@@ -28,12 +28,19 @@ class hamiltonian_type {
 
 public:
 
+  hamiltonian_type() {};
   hamiltonian_type(const std::string&);
 
   std::size_t size() const {return nodes_.size();}
 
   node_type& operator[](const unsigned i) {return nodes_[i];}
   const node_type& operator[](const unsigned i) const {return nodes_[i];}
+
+  template <typename Archive>
+  void serialize(Archive & ar, unsigned)
+  {
+      ar & nodes_;
+  }
 
 private:
 

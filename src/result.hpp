@@ -12,6 +12,13 @@ struct result
   
   /// the final spin configuration
   std::vector<int> spins_; // vector<bool> gives horrible performamce hots
+
+  template <typename Archive>
+  void serialize(Archive & ar, unsigned)
+  {
+      ar & E_;
+      ar & spins_;
+  }
 };
 
 std::ostream& operator << (std::ostream&, result const&);

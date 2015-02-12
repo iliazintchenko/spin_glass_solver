@@ -4,8 +4,8 @@
 
 sa_solver::sa_solver(const hamiltonian_type& H)
   : N_(H.size())
-  , H_(H)
 {
+  H_ = std::make_shared<hamiltonian_type>(H);
 }
 
 result sa_solver::run(
@@ -61,7 +61,7 @@ double sa_solver::compute_energy() const
 {
   double E(0.0);
   for(unsigned i = 0; i < N_; ++i)
-    for(const auto& edge : H_[i]){
+    for(const auto& edge : H_->operator[](i)) {
       bool tmp = 0;
       for(const auto b : edge.first)
         tmp ^= spins_[b];
@@ -74,7 +74,7 @@ double sa_solver::compute_energy() const
 double sa_solver::delta_energy(const unsigned ind) const
 {
   double E(0.0);
-  for(const auto& edge : H_[ind]){
+  for(const auto& edge : H_->operator[](ind)) {
     bool tmp(0);
     for(const auto b : edge.first)
       tmp ^= spins_[b];
