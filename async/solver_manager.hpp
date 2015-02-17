@@ -8,7 +8,12 @@
 #include "sa_solver.hpp"
 #include "solver_wrapper.hpp"
 
-class solver_manager {
+//
+// The purpose of this class will be to manage the solvers
+// and coordinate the load-balancing and spawning of each.
+//
+class solver_manager : hpx::components::simple_component_base<solver_manager> 
+{
 public:
 
   double                     _complexity;
@@ -32,9 +37,16 @@ public:
     _localities  = hpx::find_all_localities();
   }
 
-  // we need to create an instance of the solver_wrapper on every node
-  solver_manager(const hamiltonian_type &H) {
+  // default constructor, 
+  solver_manager() {
+  }
+
+  // Initialize the solver for the given Hamiltonian
+  // setup useful HPX vars
+  void initialize(const hamiltonian_type &H) {
     get_hpx_info();
+    //
+    // Create an instance of a wrapped solver on this local node
     //
     try {
       _agas_Wrapper_id = hpx::components::new_<wrapped_solver_class<sa_solver>>(hpx::find_here(), H).get();
@@ -43,12 +55,13 @@ public:
       std::cout << "Exception creating solver_wrapper " << std::endl;
       std::cout << e.what() << std::endl;
     }
-    // on each node register the solver manager with a unique name
+    // register the solver wrapper with a unique name
     std::cout << "registering solver_wrapper with global name " << "/solver_wrapper/"
       << boost::lexical_cast<std::string>(_rank).c_str() << std::endl;
     //
     hpx::agas::register_name_sync("/solver_wrapper/" + boost::lexical_cast<std::string>(_rank), _agas_Wrapper_id);
-    //
+
+    // from the registered object, get the actual pointer to the local class
     _solver_instance = boost::dynamic_pointer_cast<wrapped_solver_class<sa_solver>>(
         hpx::get_ptr_sync<wrapped_solver_class<sa_solver>>(_agas_Wrapper_id)
     );

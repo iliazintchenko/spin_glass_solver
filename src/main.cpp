@@ -6,6 +6,7 @@
 
 // Boost includes
 #include <boost/program_options.hpp>
+#include <boost/lexical_cast.hpp>
 
 // STL includes
 #include <string>
@@ -22,56 +23,57 @@
 #include "solver_manager.hpp"
 
 //----------------------------------------------------------------------------
-// Global vars and defs
-//----------------------------------------------------------------------------
-boost::program_options::options_description desc("Usage: " HPX_APPLICATION_STRING " [options]");
-
 // example command line
-// "c:\Program Files\MPICH2\bin\mpiexec.exe" -localonly 1 bin\Debug\spinsolve.exe --repetitions=5 -N 2 -b 0.125 -e 4.1 -o D:\build\spinglass\test.txt
+//----------------------------------------------------------------------------
+// "c:\Program Files\MPICH2\bin\mpiexec.exe" -localonly 1 bin\Debug\spinsolve.exe --repetitions=5 -N 2 -b 0.1 -e 3.0 -o D:\build\spinglass\test.txt
 // use --help to get this program help
 // use --hpx:help to get help on all options including hpx options
 
 //----------------------------------------------------------------------------
-// int main just sets up program options and then hands control to HPX
-// our main entry is hpx_main()
+// Global vars and defs, Temporary, will be moved into classes...
 //----------------------------------------------------------------------------
-int main(int argc, char* argv[])
-{
-  desc.add_options()
-    ("help,h", "Display command line options help");
-  desc.add_options()
-    ("input,i",
-    boost::program_options::value<std::string>()->default_value(SPINSOLVE_SOURCE_DIR "/testdata/Instances128Spins/lattice/128random0.lat"),
-    "Specify the input file containing lattice with spin configuration");
-  desc.add_options()
-    ("output,o",
-    boost::program_options::value<std::string>()->default_value(SPINSOLVE_BINARY_DIR "/128random0.lat"),
-    "Specify the output file which will contain results of the solver");
-  desc.add_options()
-    ("Ns,N",
-    boost::program_options::value<uint64_t>()->default_value(1000),
-    "Specify the number of Monte Carlo sweeps per run of Solver");
-  desc.add_options()
-    ("beta0,b",
-    boost::program_options::value<double>()->default_value(0.1),
-    "beta0 is the starting inverse temperature");
-  desc.add_options()
-    ("beta1,e",
-    boost::program_options::value<double>()->default_value(3.0),
-    "beta1 is the ending inverse temperature");
-  desc.add_options()
-    ("repetitions,r",
-    boost::program_options::value<uint64_t>()->default_value(1000),
-    "The number of repetitions to perform of the random solve");
-  desc.add_options()
-    ("complexity,c",
-    boost::program_options::value<double>()->default_value(1),
-    "A logarithmic estimate of the computational requirements of a single solve step\n"
-    "This figure is used as a helper to decide how to split up repetitions/iterations between threads\n"
-    );
-
-  return hpx::init(desc, argc, argv);
+namespace spinsolver {
+  boost::program_options::options_description desc("Usage: " HPX_APPLICATION_STRING " [options]");
+  //
+  hpx::id_type              here;                     
+  uint64_t                  rank;                         
+  std::string               name;                      
+  uint64_t                  nranks;                       
+  std::size_t               current;                   
+  std::size_t               os_threads;          
+  std::vector<hpx::id_type> remotes;     
+  std::vector<hpx::id_type> localities;
+  //
+  // on each node, we have one solver_manager instance
+  solver_manager            scheduler;
 }
+
+//----------------------------------------------------------------------------
+// Create solver wrapper and register it with the runtime
+//----------------------------------------------------------------------------
+int initialize_solver_wrapper(const hamiltonian_type &H)
+{
+  // useful vars that each node can keep a copy of
+  spinsolver::here        = hpx::find_here();
+  spinsolver::rank        = hpx::naming::get_locality_id_from_id(spinsolver::here);
+  spinsolver::name        = hpx::get_locality_name();
+  spinsolver::nranks      = hpx::get_num_localities().get();
+  spinsolver::current     = hpx::get_worker_thread_num();
+  spinsolver::os_threads  = hpx::get_os_thread_count();
+  spinsolver::remotes     = hpx::find_remote_localities();
+  spinsolver::localities  = hpx::find_all_localities();
+  // setup the solver manager
+  spinsolver::scheduler.initialize(H);
+  //
+  char const* msg = "Creating Solver Wrapper from OS-thread %1% on locality %2% rank %3% hostname %4%";
+  std::cout << (boost::format(msg) % spinsolver::current % hpx::get_locality_id() % spinsolver::rank % spinsolver::name.c_str()) << std::endl;
+  return 1;
+}
+
+// Define the boilerplate code necessary for the function 'initialize_solver_wrapper'
+// to be invoked as an HPX action (by a HPX future). This macro defines the
+// type 'initialize_solver_wrapper_action'.
+HPX_PLAIN_ACTION(initialize_solver_wrapper, initialize_solver_wrapper_action);
 
 //----------------------------------------------------------------------------
 // Runs SA with many inputfiles
@@ -96,10 +98,18 @@ int hpx_main(boost::program_options::variables_map& vm)
   std::size_t const os_threads          = hpx::get_os_thread_count();
   std::vector<hpx::id_type> remotes     = hpx::find_remote_localities();
   std::vector<hpx::id_type> localities  = hpx::find_all_localities();
-  //
-  char const* msg = "hello world from OS-thread %1% on locality %2% rank %3% hostname %4%";
-  std::cout << (boost::format(msg) % current % hpx::get_locality_id() % rank % name.c_str()) << std::endl;
 
+  if (rank!=0) {
+    // all the slave nodes need to do is wait for work requests to come in
+    // so exit and allow the hpx runtime to do its thing
+     // register the solver wrapper with a unique name
+    std::cout << "exiting HPX main from rank " << boost::lexical_cast<std::string>(rank).c_str() << std::endl;
+    return 0;
+  }
+
+  //
+  // get command line params
+  //
   const std::string infile  = vm["input"].as<std::string>();
   const std::string outfile = vm["output"].as<std::string>();
   const uint64_t Ns         = vm["Ns"].as<uint64_t>();
@@ -111,7 +121,7 @@ int hpx_main(boost::program_options::variables_map& vm)
 
   if (vm.count("help")) {
     if (rank==0) {
-      std::cout << desc << std::endl;
+      std::cout << spinsolver::desc << std::endl;
     }
     return hpx::finalize();
   }
@@ -121,6 +131,30 @@ int hpx_main(boost::program_options::variables_map& vm)
   // @todo, add support for multiple solvers with their own H
   //
   const hamiltonian_type H(infile);
+
+  // for each locality, trigger the initialize_solver action so that all ranks are initialized
+  // and ready to receive work. For now we pass the Hamiltonian as a parameter, but
+  // when we start multiple solvers with different H's we will change this
+  typedef initialize_solver_wrapper_action action_type;
+  std::vector<hpx::future<action_type::result_type>> futures;
+  for (auto l : localities) {
+    futures.push_back(hpx::async<action_type>(l,H));
+  }
+  // don't go any further until all localities have finished their initialization
+  hpx::wait_all(futures);
+  futures.clear();
+
+  // every node has registered its own copy of the solver manager, we need the Ids on each node
+  // so that we can invoke remote calls on them
+  std::vector<hpx::future<hpx::id_type>> _SolverIdForRank;
+  // for each locality, find the handle of the solver_manager and store it for later use.
+  for (auto l : localities) {
+    _SolverIdForRank.push_back(
+      hpx::agas::resolve_name("/solver_wrapper/" + boost::lexical_cast<std::string>(hpx::naming::get_locality_id_from_id(l)))
+    );
+  }
+  // unwrap the futures to get a vector of Ids
+  std::vector<hpx::id_type> SolverIdForRank = hpx::util::unwrapped(_SolverIdForRank);
 
   //
   // Prepare putput file
@@ -134,20 +168,20 @@ int hpx_main(boost::program_options::variables_map& vm)
     + " num_rep=" + std::to_string(num_rep)
     << std::endl;
 
-  //
-  // Create a globally registered manager object
-  //
-  solver_manager scheduler(H);
+  // get a pointer to the local object that was created on this locality
+  solver_manager::solver_ptr wrappedSolver = spinsolver::scheduler.getSolver();
+  wrappedSolver->setSolverIds(SolverIdForRank);
 
   // start timer
   std::chrono::time_point<std::chrono::system_clock> start_calc, end_calc, start_io, end_io;
   start_calc = std::chrono::system_clock::now();
 
-  // execute the solver
-  solver_manager::solver_ptr wrappedSolver = scheduler.getSolver();
-  hpx::naming::id_type       _agas_Wrapper_id = scheduler.getId();
-
-  solver_manager::result_type x = wrappedSolver->spawn(_agas_Wrapper_id,num_rep, beta0, beta1, Ns);
+  // on locality 0 we will act as master and execute the solver via the wrapper
+  // ranks will receive requests for solve operations from rank 0
+  solver_manager::result_type x;
+  if (rank==0) {
+    x = wrappedSolver->spawn(num_rep, beta0, beta1, Ns);
+  }
 
   // stop timer
   end_calc = std::chrono::system_clock::now();
@@ -167,8 +201,59 @@ int hpx_main(boost::program_options::variables_map& vm)
   elapsed_seconds = end_io-start_io;
   std::cout << "IO time: " << elapsed_seconds.count() << "s\n";
  
- 
-
   return hpx::finalize();
+}
+
+//----------------------------------------------------------------------------
+// int main just sets up program options and then hands control to HPX
+// our main entry is hpx_main()
+//
+// Caution. HPX adds a lot of command line options and some have the same shortcuts 
+// (one char representation) - avoid using them until we work out the correct way
+// to handle clashes/duplicates.
+//
+//----------------------------------------------------------------------------
+int main(int argc, char* argv[])
+{
+  spinsolver::desc.add_options()
+    ("help,h", "Display command line options help");
+  spinsolver::desc.add_options()
+    ("input,i",
+    boost::program_options::value<std::string>()->default_value(SPINSOLVE_SOURCE_DIR "/testdata/Instances128Spins/lattice/128random0.lat"),
+    "Specify the input file containing lattice with spin configuration");
+  spinsolver::desc.add_options()
+    ("output,o",
+    boost::program_options::value<std::string>()->default_value(SPINSOLVE_BINARY_DIR "/128random0.lat"),
+    "Specify the output file which will contain results of the solver");
+  spinsolver::desc.add_options()
+    ("Ns,N",
+    boost::program_options::value<uint64_t>()->default_value(1000),
+    "Specify the number of Monte Carlo sweeps per run of Solver");
+  spinsolver::desc.add_options()
+    ("beta0,b",
+    boost::program_options::value<double>()->default_value(0.1),
+    "beta0 is the starting inverse temperature");
+  spinsolver::desc.add_options()
+    ("beta1,e",
+    boost::program_options::value<double>()->default_value(3.0),
+    "beta1 is the ending inverse temperature");
+  spinsolver::desc.add_options()
+    ("repetitions,r",
+    boost::program_options::value<uint64_t>()->default_value(1000),
+    "The number of repetitions to perform of the random solve");
+  spinsolver::desc.add_options()
+    ("complexity,c",
+    boost::program_options::value<double>()->default_value(1),
+    "A logarithmic estimate of the computational requirements of a single solve step\n"
+    "This figure is used as a helper to decide how to split up repetitions/iterations between threads\n"
+    );
+
+  // Initialize and run HPX, 
+  // we want to run hpx_main on all all localities so that each can initialize
+  // the stuff needed for the solver manager etc.
+  // This command line option is added to tell hpx to run hpx_main on all localities and not just rank 0
+  std::vector<std::string> cfg;
+  cfg.push_back("hpx.run_hpx_main!=1");
+  return hpx::init(spinsolver::desc, argc, argv, cfg);
 }
 

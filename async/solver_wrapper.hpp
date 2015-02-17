@@ -9,6 +9,15 @@
 #include <queue>
 #include <cmath>
 
+//
+// This class represents a single solver type that has been wrapped 
+// via the template parameter into an HPX callable layer 
+// so that it can be invoked by remote localities.
+// (It is not necessary to wrap the solver to run it on hpx threads
+// if they are local, but we wish to spwan them on many nodes).
+//
+// Note that for each solver 'type' (class) we must create a new wrapper.
+//
 template <class T>
 struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_solver_class<T>>
 {
@@ -20,6 +29,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
   std::size_t               _os_threads;
   std::vector<hpx::id_type> _remotes;
   std::vector<hpx::id_type> _localities;
+  std::vector<hpx::id_type> _solverIdForRank;
 
   // provide a constructor, passing Args through to the internal class
   template <typename ...Args>
@@ -56,8 +66,12 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
     type get(Args... args) { return std::get<i>(std::tuple<Args...>(args...)); }
   };
 
+  void setSolverIds(const std::vector<hpx::id_type> &ids) {
+    _solverIdForRank = ids;
+  }
+
   template <typename ...Args>
-  result_type spawn(hpx::naming::id_type agas_id, uint64_t num_reps, Args... args) {
+  result_type spawn(uint64_t num_reps, Args... args) {
     result_type repetition_results_vector;
     repetition_results_vector.reserve(num_reps);
     //
@@ -96,7 +110,10 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
       // @todo, work on some scheduling to find out what a good N is
       const int THREAD_MULTIPLIER = 100;
       while (remaining>0 && async_results.size()<(_os_threads * THREAD_MULTIPLIER)) {
-        future_type fut = hpx::async(solve_step, agas_id, args..., seed + local_seed_offset);
+        int next_rank = seed % _nranks;
+        std::cout << "Invoking solve on rank " << next_rank << std::endl;
+        
+        future_type fut = hpx::async(solve_step, _solverIdForRank[next_rank], args..., seed + local_seed_offset);
         async_results.push( std::move(fut) );
         seed ++;
         remaining --;
