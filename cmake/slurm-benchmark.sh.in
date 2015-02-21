@@ -52,11 +52,11 @@ export LD_LIBRARY_PATH=${LIB_PATH}:${LD_LIBRARY_PATH}
 export HDF5_PARAPREFIX=${BASEDIR}/${DIR_NAME}
 export BGLOCKLESSMPIO_F_TYPE=0x47504653
 export MV2_ALLTOALL_MEDIUM_MSG=524288
-#export MpiDefault=none
-#export MV2_IBA_HCA=roq
-#export MV2_USE_RDMA_CM=1
-#export MV2_USE_IWARP_MODE=1
-#export MV2_ENABLE_AFFINITY=0
+export MpiDefault=none
+export MV2_IBA_HCA=roq
+export MV2_USE_RDMA_CM=1
+export MV2_USE_IWARP_MODE=1
+export MV2_ENABLE_AFFINITY=0
 export LC_ALL="en_US.UTF-8"
 
 srun --mpi=pmi2 -n $[${SERVERS_PERNODE} * $NODES] ${EXECUTABLE1} ${PROGRAM_PARAMS}
@@ -93,6 +93,8 @@ MEMPERNODE=
 TIME="00:05:00"
 CLIENTS_PERNODE=0
 SERVERS_PERNODE=1
+REPETITIONS_PER_THREAD=100
+SWEEPS=5000
 
 # Loop through all the parameter combinations generating jobs for each
 # "tcp" "mpi" "ibverbs"
@@ -101,8 +103,7 @@ do
   TCP_ENABLE="-Ihpx.parcel.tcp.enable=0 -Ihpx.parcel.bootstrap=mpi"
   for THREADS_PERTASK in 1 2 4 8 16 32 48 
   do
-    SWEEPS=5000
-    REPETITIONS=$[$THREADS_PERTASK * 100 * $NODES]
+    REPETITIONS=$[$THREADS_PERTASK * REPETITIONS_PER_THREAD * $NODES]
     PROGRAM_PARAMS="-Ihpx.parcel.mpi.enable=1 -Ihpx.parcel.tcp.enable=0 -Ihpx.parcel.bootstrap=mpi --hpx:threads=${THREADS_PERTASK} --hpx:bind=scatter --repetitions=${REPETITIONS} --Ns=$SWEEPS --beta0=0.1 --beta1=3.0 --input=/gpfs/bbp.cscs.ch/home/biddisco/src/spin_glass_solver/testdata/Instances128Spins/lattice/128random0.lat --output=./128random0.lat"
     write_script
   done

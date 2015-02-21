@@ -70,35 +70,8 @@ int main(int argc, char* argv[])
     "This figure is used as a helper to decide how to split up repetitions/iterations between threads\n"
     );
 
-  return hpx::init(desc, argc, argv);
-}
-
-//----------------------------------------------------------------------------
-// Runs SA with many inputfiles
-// Args : beta0 is the starting temperature of SA (use 0.1 for bimodal instances)
-//        beta1 is the ending temperature of SA (use 3.0 for bimodal instances)
-//        Ns is the number of Monte Carlo Sweeps within each run of SA
-//        num_rep is the number of repetitions of SA (with different seeds)
-//        inputfile is the filename describing the Hamiltonian H() of the spin glass
-//        outputfile is the file of Configuration of spins and energy
-//
-// Output: All written into outputfile (Energy and spin configuration for each repetition)
-//
-// Note: Seed of SA is the repetition number
-//----------------------------------------------------------------------------
-int hpx_main(boost::program_options::variables_map& vm)
-{
-  hpx::id_type here                     = hpx::find_here();
-  uint64_t rank                         = hpx::naming::get_locality_id_from_id(here);
-  std::string name                      = hpx::get_locality_name();
-  uint64_t nranks                       = hpx::get_num_localities().get();
-  std::size_t current                   = hpx::get_worker_thread_num();
-  std::size_t const os_threads          = hpx::get_os_thread_count();
-  std::vector<hpx::id_type> remotes     = hpx::find_remote_localities();
-  std::vector<hpx::id_type> localities  = hpx::find_all_localities();
-  //
-  char const* msg = "hello world from OS-thread %1% on locality %2% rank %3% hostname %4%";
-  std::cout << (boost::format(msg) % current % hpx::get_locality_id() % rank % name.c_str()) << std::endl;
+  boost::program_options::variables_map vm; 
+  boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc),  vm); 
 
   const std::string infile  = vm["input"].as<std::string>();
   const std::string outfile = vm["output"].as<std::string>();
@@ -109,11 +82,13 @@ int hpx_main(boost::program_options::variables_map& vm)
   //
   const double complexity   = vm["complexity"].as<double>();
 
+  int rank=0;
+
   if (vm.count("help")) {
     if (rank==0) {
       std::cout << desc << std::endl;
     }
-    return hpx::finalize();
+    return 1;
   }
 
   //
@@ -134,11 +109,6 @@ int hpx_main(boost::program_options::variables_map& vm)
     + " num_rep=" + std::to_string(num_rep)
     << std::endl;
 
-  //
-  // create a single local solver instance
-  //
-  sa_solver solver(H);
-
   // start timer
   std::chrono::time_point<std::chrono::system_clock> start_calc, end_calc, start_io, end_io;
   start_calc = std::chrono::system_clock::now();
@@ -146,8 +116,13 @@ int hpx_main(boost::program_options::variables_map& vm)
   // execute the solver
 
   std::vector<result> x;
+  x.reserve(num_rep);
   for (int i=0; i<num_rep; ++i) {  
-   x.push_back(solver.run(beta0, beta1, Ns, i));
+    //
+    // create a single local solver instance
+    //
+    sa_solver solver(H);
+    x.push_back(solver.run(beta0, beta1, Ns, i));
   }
 
   // stop timer
@@ -168,8 +143,6 @@ int hpx_main(boost::program_options::variables_map& vm)
   elapsed_seconds = end_io-start_io;
   std::cout << "IO time: " << elapsed_seconds.count() << "s\n";
  
- 
-
-  return hpx::finalize();
+  return 0; 
 }
 
