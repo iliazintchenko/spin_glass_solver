@@ -109,9 +109,9 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
       // Use a guesstimate of how many threads per node to queue at a time
       // @todo, work on some scheduling to find out what a good N is
       const int THREAD_MULTIPLIER = 100;
-      while (remaining>0 && async_results.size()<(_os_threads * THREAD_MULTIPLIER)) {
+      while (remaining>0 && async_results.size()<(_os_threads * _nranks * THREAD_MULTIPLIER)) {
         int next_rank = seed % _nranks;
-        std::cout << "Invoking solve on rank " << next_rank << std::endl;
+//        std::cout << "Invoking solve on rank " << next_rank << std::endl;
         
         future_type fut = hpx::async(solve_step, _solverIdForRank[next_rank], args..., seed + local_seed_offset);
         async_results.push( std::move(fut) );
