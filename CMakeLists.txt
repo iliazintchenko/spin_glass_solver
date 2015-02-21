@@ -30,6 +30,11 @@ SET (CMAKE_ARCHIVE_OUTPUT_DIRECTORY
 )
 
 #--------------------------------------------------
+# CMake include path
+#--------------------------------------------------
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
+#--------------------------------------------------
 # Flags
 #--------------------------------------------------
 # needed for all compilers
@@ -46,16 +51,9 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 endif()
 
 #--------------------------------------------------
-# Find HPX
-#--------------------------------------------------
-find_package(HPX REQUIRED)
-set(CMAKE_CXX_FLAGS ${HPX_CXX_FLAGS})
-include_directories(${HPX_INCLUDE_DIRS})
-
-#--------------------------------------------------
 # Find Boost (should already be found by HPX anyway)
 #--------------------------------------------------
-find_package(Boost 
+find_package(Boost 1.56
     COMPONENTS 
         program_options thread system date_time chrono serialization atomic filesystem 
     REQUIRED
@@ -63,6 +61,15 @@ find_package(Boost
 if (WIN32)
   add_definitions(-DBOOST_PROGRAM_OPTIONS_DYN_LINK)
 endif()
+
+message("Boost libs are in ${Boost_LIBRARY_DIRS}  ${Boost_LIBRARIES}")
+
+#--------------------------------------------------
+# Find HPX
+#--------------------------------------------------
+find_package(HPX REQUIRED)
+set(CMAKE_CXX_FLAGS ${HPX_CXX_FLAGS})
+include_directories(${HPX_INCLUDE_DIRS})
 
 #--------------------------------------------------
 # Our multi-thread wrappers 
@@ -107,6 +114,16 @@ target_link_libraries(testhpx
     iostreams_component 
     ${Boost_LIBRARIES}
 )
+
+#--------------------------------------------------
+# Generate benchmarking scripts
+#--------------------------------------------------
+hpx_option(${PROJECT_NAME}_BENCHMARK_SCRIPTS_PATH PATH
+  "Directory to place batch scripts in"
+  "${spin_glass_solver_BINARY_DIR}/scripts"
+  ADVANCED)
+
+include(generate_jobs)
 
 #--------------------------------------------------
 # Install

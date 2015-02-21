@@ -186,7 +186,12 @@ int hpx_main(boost::program_options::variables_map& vm)
   // stop timer
   end_calc = std::chrono::system_clock::now();
   std::chrono::duration<double> elapsed_seconds = end_calc-start_calc;
-  std::cout << "Calculation time: " << elapsed_seconds.count() << "s\n";
+  std::cout << "CSVData "             
+            << ", Ns, "               << Ns
+            << ", num_rep, "          << num_rep
+            << ", nodes, "            << nranks 
+            << ", threads, "          << os_threads 
+            << ", Calculation_time, " << elapsed_seconds.count() << std::endl;
 
   // start timer
   start_io = std::chrono::system_clock::now();
