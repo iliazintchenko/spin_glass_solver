@@ -105,12 +105,13 @@ target_link_libraries(spinsolve
 )
 
 #--------------------------------------------------
-# Exe
+# Exe, reference code that runs on single local thread
 #--------------------------------------------------
 add_definitions(-DHPX_APPLICATION_EXPORTS)
-add_executable(testhpx attic/solver_wrapper.cxx)
-hpx_setup_target(testhpx)
-target_link_libraries(testhpx 
+add_executable(solver_reference src/single_thread.cpp)
+hpx_setup_target(solver_reference)
+target_link_libraries(solver_reference 
+    solver
     iostreams_component 
     ${Boost_LIBRARIES}
 )
