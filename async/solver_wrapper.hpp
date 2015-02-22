@@ -33,7 +33,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
 
   // provide a constructor, passing Args through to the internal class
   template <typename ...Args>
-  wrapped_solver_class(Args... args) : _theSolver(args...) {
+  wrapped_solver_class(Args&&... args) : _theSolver(std::forward<Args>(args)...) {
     get_hpx_info();
   };
 
@@ -71,7 +71,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
   }
 
   template <typename ...Args>
-  result_type spawn(uint64_t num_reps, Args... args) {
+  result_type spawn(uint64_t num_reps, Args&&... args) {
     result_type repetition_results_vector;
     repetition_results_vector.reserve(num_reps);
     //
@@ -88,7 +88,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
     // instantiate an action; we can call this on multiple threads asynchronously
     // on this node, or on remote nodes
     //
-    wrapped_solver_class<T>::run_one_action<Args..., int> solve_step;
+    wrapped_solver_class<T>::run_one_action<Args&&..., int> solve_step;
 
     // each solve step will return a future, create a queue for them
     // note: the futures are HPX_MOVABLE_BUT_NOT_COPYABLE
@@ -97,7 +97,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
 
     std::cout
         << "Num_reps is " << num_reps
-        << " num sweeps is " << arg<2, Args...>().get(args...)
+        << " num sweeps is " << arg<2, Args&&...>().get(std::forward<Args>(args)...)
         << " OS threads is " << _os_threads << std::endl;
 
     uint64_t remaining = num_reps;
@@ -111,8 +111,6 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
       const int THREAD_MULTIPLIER = 100;
       while (remaining>0 && async_results.size()<(_os_threads * _nranks * THREAD_MULTIPLIER)) {
         int next_rank = seed % _nranks;
-//        std::cout << "Invoking solve on rank " << next_rank << std::endl;
-        
         future_type fut = hpx::async(solve_step, _solverIdForRank[next_rank], args..., seed + local_seed_offset);
         async_results.push( std::move(fut) );
         seed ++;
@@ -147,7 +145,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
   typename T::result_type run_one(Args... args) {
     // The solver class is not thread safe, so we cannot run N threads on the same instance
     // create a copy of our internal solver for each new request
-    T newSolver = _theSolver;
+    T newSolver(_theSolver);
     // std::cout << "Running a single solve " << std::endl;
     return newSolver.run(args...);
   }
