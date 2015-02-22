@@ -5,6 +5,8 @@
 #include "hamiltonian.hpp"
 #include "result.hpp"
 
+//#define FORCE_HAMILTONIAN_COPY 1
+
 class sa_solver
 // Simulated annealing algorithm to find ground state of spin glass
 // Input: Hamiltonian of the spin glass (when constructing a class object)
@@ -19,14 +21,18 @@ public:
   // empty constructor required by HPX factory create function
   sa_solver() : N_(0) { };
 
-  // Copy constructor we nned to kake new instances
+  // Copy constructor we need to take new instances
   sa_solver(const sa_solver &other) {
     N_     = other.N_;
+#ifdef FORCE_HAMILTONIAN_COPY
+    H_     = std::make_shared<hamiltonian_type>(*other.H_.get());
+#else
     H_     = other.H_;
+#endif
     spins_ = other.spins_;
   }
 
-  // initialise sa solver with hamiltonian
+  // initialize sa solver with hamiltonian
   sa_solver(const hamiltonian_type&);
 
   //single run of sa from random initial state on hamiltonian H_

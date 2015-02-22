@@ -29,7 +29,19 @@ class hamiltonian_type {
 public:
 
   hamiltonian_type() {};
+
+  // construct with filname containing hamiltonian
   hamiltonian_type(const std::string&);
+
+  // copy constructor
+  hamiltonian_type(const hamiltonian_type &other) : nodes_(other.nodes_) {
+//    std::cout << "Copy constructor of hamiltonian" << std::endl;
+  };
+
+  // for efficient hpx forwarding, a move constructor is preffered
+  hamiltonian_type(hamiltonian_type &&other) : nodes_(std::move(other.nodes_)) {
+//    std::cout << "Move constructor of hamiltonian" << std::endl;
+  };
 
   std::size_t size() const {return nodes_.size();}
 
