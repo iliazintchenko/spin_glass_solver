@@ -59,7 +59,8 @@ find_package(Boost 1.56
     REQUIRED
 )
 if (WIN32)
-  add_definitions(-DBOOST_PROGRAM_OPTIONS_DYN_LINK)
+  #add_definitions(-DBOOST_PROGRAM_OPTIONS_DYN_LINK)
+  add_definitions(-DBOOST_ALL_DYN_LINK)
 endif()
 
 message("Boost libs are in ${Boost_LIBRARY_DIRS}  ${Boost_LIBRARIES}")
