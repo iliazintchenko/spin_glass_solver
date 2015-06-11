@@ -166,24 +166,14 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
 };
 
 //
-// Declare the necessary component action boilerplate code for actions taking template type arguments.
-// It has to be visible in all translation units using the action,
-// thus it is recommended to place it into the header file defining the component.
-//
-HPX_REGISTER_ACTION_DECLARATION_TEMPLATE(
-    (template <typename ...Args>),
-    (wrapped_solver_class<sa_solver>::run_one_action<Args...>)
-)
-
-//
 // the following code should go in CXX : it must only appear once per action type
 // for simplicity we keep it here for the time being
 //
-typedef hpx::components::simple_component<wrapped_solver_class<sa_solver>> wrapped_solver_type;
+typedef hpx::components::simple_component< wrapped_solver_class<sa_solver> > wrapped_solver_type;
 typedef wrapped_solver_class<sa_solver> solver_type;
 
 // Define boilerplate required once per component module.
-HPX_REGISTER_MINIMAL_COMPONENT_FACTORY(wrapped_solver_type, solver_type);
+HPX_REGISTER_COMPONENT(wrapped_solver_type, solver_type);
 
 // If this code is part of a library, then we need this registration
 // to expose/export the factory creation
