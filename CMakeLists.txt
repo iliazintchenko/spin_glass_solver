@@ -38,7 +38,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # Flags
 #--------------------------------------------------
 # needed for all compilers
-set(CMAKE_CXX_FLAGS "-std=c++11")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 #  set(CMAKE_BUILD_TYPE RELEASE)
@@ -73,6 +73,11 @@ set(CMAKE_CXX_FLAGS ${HPX_CXX_FLAGS})
 include_directories(${HPX_INCLUDE_DIRS})
 
 #--------------------------------------------------
+# Use our subset of KWSys
+#--------------------------------------------------
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/kwsys)
+
+#--------------------------------------------------
 # Our multi-thread wrappers 
 #--------------------------------------------------
 include_directories(src)
@@ -84,6 +89,7 @@ include_directories(async)
 # use these for default input filenames and output locations
 add_definitions(-DSPINSOLVE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\")
 add_definitions(-DSPINSOLVE_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\")
+add_definitions(-DKWSYS_NAMESPACE=kwsys)
 
 #--------------------------------------------------
 # Library
@@ -92,7 +98,13 @@ add_library(solver STATIC
   src/result.cpp 
   src/hamiltonian.cpp 
   src/sa_solver.cpp
+  src/CommandCapture.cpp
+  src/kwsys/ProcessUNIX.c
+  src/kwsys/System.c
 )
+if (WIN32)
+ # add src/kwsys/ProcessUNIX.c
+endif()
 
 #--------------------------------------------------
 # Exe

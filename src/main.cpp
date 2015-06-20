@@ -21,7 +21,9 @@
 // Wrapping solver in an HPX framework
 #include "solver_wrapper.hpp"
 #include "solver_manager.hpp"
-
+//
+#include "CommandCapture.h"
+//
 //----------------------------------------------------------------------------
 // example command line
 //----------------------------------------------------------------------------
@@ -98,6 +100,15 @@ int hpx_main(boost::program_options::variables_map& vm)
   std::size_t const os_threads          = hpx::get_os_thread_count();
   std::vector<hpx::id_type> remotes     = hpx::find_remote_localities();
   std::vector<hpx::id_type> localities  = hpx::find_all_localities();
+
+  const char *command_1 = "hostname";
+  std::vector<const char*> command_list;
+  std::vector<std::string> result;
+  command_list.push_back(command_1);
+  ExecuteAndCapture(command_list, result, 30.0);
+  for (auto & str_return : result) {
+    std::cout << str_return.c_str() << std::endl;
+  }
 
   if (rank!=0) {
     // all the slave nodes need to do is wait for work requests to come in

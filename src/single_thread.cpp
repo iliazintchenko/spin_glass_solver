@@ -1,5 +1,6 @@
 #define HPX_APPLICATION_STRING "spinsolve"
 // HPX includes (before boost)
+#include <hpx/hpx_fwd.hpp>
 #include <hpx/hpx_init.hpp>
 #include <hpx/hpx.hpp>
 #include <hpx/include/iostreams.hpp>
