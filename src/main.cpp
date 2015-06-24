@@ -78,6 +78,27 @@ int initialize_solver_wrapper(const hamiltonian_type &H)
 HPX_PLAIN_ACTION(initialize_solver_wrapper, initialize_solver_wrapper_action);
 
 //----------------------------------------------------------------------------
+//
+// Test we can execute a shell command and get the result
+//
+void test_shell_command(const std::string &name, int rank)
+{
+    std::vector<const char*> command_list;
+    command_list.push_back("hostname");
+    std::vector<std::string> result = ExecuteAndCapture(command_list, 30.0, false);
+    for (auto & str_return : result) {
+        std::cout << "Locality " << name.c_str() << " with rank " << rank << " : ";
+        std::cout << str_return.c_str() << std::endl;
+    }
+    //
+    result = ExecuteAndCaptureSSH(command_list, 30.0, "", "", "", "monch.cscs.ch", false);
+    for (auto & str_return : result) {
+        std::cout << "Locality " << name.c_str() << " : ";
+        std::cout << str_return.c_str() << std::endl;
+    }
+}
+
+//----------------------------------------------------------------------------
 // Runs SA with many inputfiles
 // Args : beta0 is the starting temperature of SA (use 0.1 for bimodal instances)
 //        beta1 is the ending temperature of SA (use 3.0 for bimodal instances)
@@ -101,14 +122,7 @@ int hpx_main(boost::program_options::variables_map& vm)
   std::vector<hpx::id_type> remotes     = hpx::find_remote_localities();
   std::vector<hpx::id_type> localities  = hpx::find_all_localities();
 
-  const char *command_1 = "hostname";
-  std::vector<const char*> command_list;
-  std::vector<std::string> result;
-  command_list.push_back(command_1);
-  ExecuteAndCapture(command_list, result, 30.0);
-  for (auto & str_return : result) {
-    std::cout << str_return.c_str() << std::endl;
-  }
+  test_shell_command(name, rank);
 
   if (rank!=0) {
     // all the slave nodes need to do is wait for work requests to come in

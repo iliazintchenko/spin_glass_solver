@@ -28,26 +28,31 @@ std::string getTempFile(const char *name) {
 #endif
 }
 //---------------------------------------------------------------------------
+// utility display function
 void DisplayCommand(const std::string &fullcommandline)
 {
   std::string blanks(fullcommandline.size()>80?80:fullcommandline.size(),'-');
   std::cout << blanks.c_str() << std::endl << fullcommandline.c_str() << std::endl << blanks.c_str() << std::endl; 
 }
 //---------------------------------------------------------------------------
-void ExecuteAndCapture(std::vector<const char*> &commands, std::vector<std::string> &std_out, double timeout)
+std::vector<std::string> ExecuteAndCapture(const std::vector<const char*> &commands, double timeout, bool verbose)
 {
-  commands.push_back(0);
+  std::vector<std::string> std_out;
+  std::vector<const char*> commands_with_null_term = commands;
+  commands_with_null_term.push_back(0);
   kwsysProcess* process = kwsysProcess_New();
-  kwsysProcess_SetCommand(process, &commands[0]);
+  kwsysProcess_SetCommand(process, &commands_with_null_term[0]);
   kwsysProcess_SetTimeout(process, timeout);
   std::string PipeFileName = getTempFile("crayviz_Pipe.txt");
   kwsysProcess_SetPipeFile(process, kwsysProcess_Pipe_STDOUT, PipeFileName.c_str());
   //
   // Display the entire command for debug purposes and make it pretty
   //
-  std::string fullcommandline;
-  for (std::vector<const char*>::iterator it=commands.begin(); it!=commands.end()-1; ++it) fullcommandline += std::string(*it) + " ";
-  DisplayCommand(fullcommandline);
+  if (verbose) {
+      std::string fullcommandline;
+      std::for_each(commands.begin(), commands.end(), [&](const std::string &piece){ fullcommandline += piece + " "; });
+      DisplayCommand(fullcommandline);
+  }
   //
   // Execute
   //
@@ -70,20 +75,25 @@ void ExecuteAndCapture(std::vector<const char*> &commands, std::vector<std::stri
   int linenumber = 0;
   while (PipeFile.good()) {    
     getline(PipeFile,line);
-    std_out.push_back(line);
-    std::cout << std::setw(5) << linenumber++ << " : " << line.c_str() << std::endl;
+    if (line.size()>0) {
+        std_out.push_back(line);
+        if (verbose) {
+            std::cout << std::setw(5) << linenumber++ << " : " << line.c_str() << std::endl;
+        }
+    }
   }
   delete []filebuffer;
   boost::filesystem::remove(PipeFileName.c_str());
+  return std_out;
 }
 //---------------------------------------------------------------------------
-void ExecuteAndCaptureSSH(std::vector<const char*> &commands, 
-                          std::vector<std::string> &std_out, 
+std::vector<std::string> ExecuteAndCaptureSSH(const std::vector<const char*> &commands,
                           double timeout, 
-                          std::string &plink,
-                          std::string &user,
-                          std::string &key,
-                          std::string &loginnode
+                          const std::string &plink,
+                          const std::string &user,
+                          const std::string &key,
+                          const std::string &loginnode,
+                          bool verbose
                           )
 {
   std::vector<const char*> full_command;
@@ -99,6 +109,6 @@ void ExecuteAndCaptureSSH(std::vector<const char*> &commands,
   full_command.push_back("ssh");
   full_command.push_back(loginnode.c_str());
 #endif
-  full_command.insert(full_command.end(),commands.begin(),commands.end());
-  ExecuteAndCapture(full_command, std_out, timeout);
+  full_command.insert(full_command.end(), commands.begin(), commands.end());
+  return ExecuteAndCapture(full_command, timeout, verbose);
 }

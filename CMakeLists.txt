@@ -63,8 +63,6 @@ if (WIN32)
   add_definitions(-DBOOST_ALL_DYN_LINK)
 endif()
 
-message("Boost libs are in ${Boost_LIBRARY_DIRS}  ${Boost_LIBRARIES}")
-
 #--------------------------------------------------
 # Find HPX
 #--------------------------------------------------
