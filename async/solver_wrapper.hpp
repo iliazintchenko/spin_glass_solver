@@ -107,6 +107,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
       // as long as there are repetitions left and not too many launched
       // add new ones to the waiting queue
       // Use a guesstimate of how many threads per node to queue at a time
+      //
       // @todo, work on some scheduling to find out what a good N is
       const int THREAD_MULTIPLIER = 100;
       while (remaining>0 && async_results.size()<(_os_threads * _nranks * THREAD_MULTIPLIER)) {
@@ -136,7 +137,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
       }
     }
 
-    std::cout << "Here end loop " << std::endl;
+    std::cout << "Solver Wrapper, end of spawn loop " << std::endl;
     // c++11 will move the result to the caller without copying
     return repetition_results_vector;
   }
