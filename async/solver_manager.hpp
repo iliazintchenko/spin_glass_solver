@@ -74,6 +74,10 @@ public:
   hpx::naming::id_type getId() {
     return _agas_Wrapper_id;
   }
+
+  int abort() {
+      return _solver_instance->abort();
+  }
 };
 
 #endif

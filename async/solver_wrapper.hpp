@@ -27,6 +27,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
   uint64_t                  _rank;
   uint64_t                  _nranks;
   std::size_t               _os_threads;
+  bool                      _abort;
   std::vector<hpx::id_type> _remotes;
   std::vector<hpx::id_type> _localities;
   std::vector<hpx::id_type> _solverIdForRank;
@@ -34,7 +35,8 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
   // provide a constructor, passing Args through to the internal class
   template <typename ...Args>
   wrapped_solver_class(Args&&... args) : _theSolver(std::forward<Args>(args)...) {
-    get_hpx_info();
+      _abort = false;
+      get_hpx_info();
   };
 
   ~wrapped_solver_class() {
@@ -103,7 +105,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
     uint64_t remaining = num_reps;
     uint64_t seed = 0;
     const int default_sleep = 100;
-    while (!async_results.empty() || remaining>0) {
+    while (!_abort && (!async_results.empty() || remaining>0)) {
       // as long as there are repetitions left and not too many launched
       // add new ones to the waiting queue
       // Use a guesstimate of how many threads per node to queue at a time
@@ -151,6 +153,10 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
     return newSolver.run(args...);
   }
 
+  int abort() {
+      _abort = true;
+      return 1;
+  }
   //
   // We wish to execute the run_one function from remote async calls
   // so we must wrap it up as an hpx::action for serialization and
