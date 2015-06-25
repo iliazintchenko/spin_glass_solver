@@ -7,6 +7,7 @@
 // Boost includes
 #include <boost/program_options.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/algorithm/string.hpp>
 
 // STL includes
 #include <string>
@@ -35,19 +36,19 @@
 // Global vars and defs, Temporary, will be moved into classes...
 //----------------------------------------------------------------------------
 namespace spinsolver {
-boost::program_options::options_description desc("Usage: " HPX_APPLICATION_STRING " [options]");
-//
-hpx::id_type              here;
-uint64_t                  rank;
-std::string               name;
-uint64_t                  nranks;
-std::size_t               current;
-std::size_t               os_threads;
-std::vector<hpx::id_type> remotes;
-std::vector<hpx::id_type> localities;
-//
-// on each node, we have one solver_manager instance
-solver_manager            scheduler;
+    boost::program_options::options_description desc("Usage: " HPX_APPLICATION_STRING " [options]");
+    //
+    hpx::id_type              here;
+    uint64_t                  rank;
+    std::string               name;
+    uint64_t                  nranks;
+    std::size_t               current;
+    std::size_t               os_threads;
+    std::vector<hpx::id_type> remotes;
+    std::vector<hpx::id_type> localities;
+    //
+    // on each node, we have one solver_manager instance
+    solver_manager            scheduler;
 }
 
 //----------------------------------------------------------------------------
@@ -109,55 +110,84 @@ void stop_monitor(hpx::promise<void> p)
 }
 
 //----------------------------------------------------------------------------
-int monitor(double runfor, std::string const& name, boost::uint64_t pause)
+hpx::naming::id_type get_counter(std::string &countername, int locality)
+{
+    std::string counter1 = "/threads{locality#*/total}/idle-rate";
+    std::string replacement = "#" + boost::lexical_cast<std::string>(locality);
+    boost::replace_all(countername, "#*", replacement);
+    //std::cout << "Generated counter name " << final.c_str() << std::endl;
+    hpx::naming::id_type id = hpx::performance_counters::get_counter(countername);
+    if (!id) {
+        std::cout << (boost::format("error: performance counter not found (%s)") % countername) << std::endl;
+    }
+    return id;
+}
+//----------------------------------------------------------------------------
+
+int monitor(double runfor, boost::uint64_t pause)
 {
 #if defined(BOOST_WINDOWS) && HPX_USE_WINDOWS_PERFORMANCE_COUNTERS != 0
     hpx::register_shutdown_function(&uninstall_windows_counters);
 #endif
-
-    // Resolve the GID of the performance counter using it's symbolic name.
-    hpx::naming::id_type id = hpx::performance_counters::get_counter(name);
-    if (!id)
-    {
-        std::cout << (boost::format(
-                "error: performance counter not found (%s)")
-        % name) << std::endl;
-        return 1;
-    }
-
-    boost::uint32_t const locality_id = hpx::get_locality_id();
-
     hpx::promise<void> stop_flag;
     hpx::register_shutdown_function(boost::bind(&stop_monitor, stop_flag));
 
     boost::int64_t zero_time = 0;
     hpx::future<void> f = stop_flag.get_future();
 
+    uint64_t initial_ranks = hpx::get_num_localities().get();
+
     hpx::util::high_resolution_timer t;
-    while (runfor < 0 || t.elapsed() < runfor)
+    while (runfor<0 || t.elapsed()<runfor)
     {
+        hpx::state st;
+        hpx::runtime* rt = hpx::get_runtime_ptr();
+        if (NULL == rt) {
+            // we're probably either starting or stopping
+            st = hpx::state_running;
+        }
+        else st = (rt->get_thread_manager().status());
+
+        std::cout << "hpx runtime state is " << (int)st << std::endl;
+
         // stop collecting data when the runtime is exiting
-        if (!hpx::is_running() || f.is_ready())
-            return 0;
+        bool closing = hpx::threads::threadmanager_is(hpx::state_pre_shutdown);
+        if (closing) return 0;
+        if (f.is_ready()) return 0;
 
-        // Query the performance counter.
-        using namespace hpx::performance_counters;
-        counter_value value = stubs::performance_counter::get_value(id, true);
+        uint64_t current_ranks = hpx::get_num_localities().get();
+        std::cout << std::flush;
+        if (initial_ranks!=current_ranks) {
+            std::cout << "\nRanks changed from " << initial_ranks << " to " << current_ranks << std::endl << std::flush;
+            initial_ranks = current_ranks;
+        }
 
-        if (status_is_valid(value.status_))
-        {
-            if (!zero_time)
-                zero_time = value.time_;
+        // Query the performance counter for each locality.
+        std::vector<hpx::id_type> localities  = hpx::find_all_localities();
+        for (auto l : localities) {
+            int rank = hpx::naming::get_locality_id_from_id(l);
+            std::string counter_template = "/threads{locality#*/total}/idle-rate";
+            hpx::naming::id_type id = get_counter(counter_template, rank);
+            using namespace hpx::performance_counters;
+            // get the current counter data and reset it to zero
+            counter_value value = stubs::performance_counter::get_value(id, true);
 
-            std::cout << (boost::format("  %s, %04d, %6.1f[s], %5.2f%%\n")
-            % name
-            % value.count_
-            % double((value.time_ - zero_time) * 1e-9)
-            % (value.value_*0.01));
+            if (status_is_valid(value.status_))
+            {
+                if (!zero_time)
+                    zero_time = value.time_;
 
-#if defined(BOOST_WINDOWS) && HPX_USE_WINDOWS_PERFORMANCE_COUNTERS != 0
-            update_windows_counters(value.value_);
-#endif
+                std::cout << (boost::format("Status ranks : %03i, counter : %s, %04d, %6.1f[s], %5.2f%%\n")
+                % rank
+                % counter_template
+                % value.count_
+                % double((value.time_ - zero_time) * 1e-9)
+                % (value.value_*0.01));
+
+    #if defined(BOOST_WINDOWS) && HPX_USE_WINDOWS_PERFORMANCE_COUNTERS != 0
+                update_windows_counters(value.value_);
+    #endif
+            }
         }
 
         // Schedule a wakeup.
@@ -186,6 +216,105 @@ int run_solvers()
 }
 
 //----------------------------------------------------------------------------
+// spawn instances of this program to demonstrate job resizing
+// this happens on the local node and is only for testing
+//----------------------------------------------------------------------------
+int add_nodes(int N)
+{
+    std::vector<const char*> command_list;
+    command_list.push_back("/Users/biddisco/build/spinmaster/bin/spinsolve");
+    command_list.push_back("-Ihpx.parcel.port=7910");
+    command_list.push_back("--hpx:threads=2");
+    command_list.push_back("--hpx:connect");
+    ExecuteAndDetach(command_list, true);
+    return 0;
+}
+
+//----------------------------------------------------------------------------
+// execute slurm command to add nodes to running job
+// This is for productions use
+//----------------------------------------------------------------------------
+int add_nodes_slurm(int N)
+{
+    return 0;
+}
+
+//----------------------------------------------------------------------------
+// utility function to avoid blocking on cin getline
+//----------------------------------------------------------------------------
+bool inputAvailable()
+{
+  struct timeval tv;
+  fd_set fds;
+  tv.tv_sec = 0;
+  tv.tv_usec = 0;
+  FD_ZERO(&fds);
+  FD_SET(STDIN_FILENO, &fds);
+  select(STDIN_FILENO+1, &fds, NULL, NULL, &tv);
+  return (FD_ISSET(0, &fds));
+}
+
+//----------------------------------------------------------------------------
+// read commands from stdin for demo purposes
+//----------------------------------------------------------------------------
+int poll_stdin()
+{
+    // Enter the interpreter loop.
+    bool abort = false;
+    std::string line;
+    while (hpx::is_running() && !abort) {
+        if (inputAvailable()) {
+            std::getline(std::cin, line);
+
+            boost::algorithm::trim(line);
+
+            std::vector<std::string> cmd;
+            boost::algorithm::split(cmd, line,
+                    boost::algorithm::is_any_of(" \t\n"),
+                    boost::algorithm::token_compress_on);
+
+            if (!cmd.empty() && !cmd[0].empty())
+            {
+                // try to interpret the entered command
+                if (cmd[0] == "reset") {
+                }
+                else if (cmd[0] == "add") {
+                    if (cmd.size() == 2) {
+                        int N = boost::lexical_cast<int>(cmd[1]);
+                        if (N>0) add_nodes(N);
+                    }
+                }
+                else if (cmd[0] == "sadd") {
+                    if (cmd.size() == 2) {
+                        int N = boost::lexical_cast<int>(cmd[1]);
+                        if (N>0) add_nodes_slurm(N);
+                    }
+                }
+                else if (cmd[0] == "query") {
+                }
+                else if (cmd[0] == "help") {
+                    std::cout << "commands are add <n>, query, reset, quit " << std::endl;
+                }
+                else if (cmd[0] == "quit") {
+                    spinsolver::scheduler.abort();
+                    abort = true;
+                    break;
+                }
+                else {
+                    std::cout << "error: invalid command '"
+                            << line << "'" << std::endl;
+                }
+            }
+            std::cout << "\n> ";
+        }
+        else {
+            hpx::this_thread::suspend(500);
+        }
+    }
+    std::cout << "Query thread terminated " << std::endl;
+    return 0;
+}
+//----------------------------------------------------------------------------
 int hpx_main(boost::program_options::variables_map& vm)
 {
     hpx::id_type here                     = hpx::find_here();
@@ -197,10 +326,11 @@ int hpx_main(boost::program_options::variables_map& vm)
     std::vector<hpx::id_type> remotes     = hpx::find_remote_localities();
     std::vector<hpx::id_type> localities  = hpx::find_all_localities();
 
-    test_shell_command(name, rank);
+    int port = boost::lexical_cast<std::size_t>(hpx::get_config_entry("hpx.parcel.port", 0));
+    int agas = boost::lexical_cast<std::size_t>(hpx::get_config_entry("hpx.agas.port", 0));
+    std::cout << "Rank " << rank << " Using port number " << port << " and agas " << agas << std::endl;
 
-    std::string counter1 = "/threads{locality#0/total}/idle-rate";
-    std::string counter2 = "/threadqueue{locality#0/total}/length";
+    //test_shell_command(name, rank);
 
     if (rank!=0) {
         // all the slave nodes need to do is wait for work requests to come in
@@ -238,27 +368,34 @@ int hpx_main(boost::program_options::variables_map& vm)
     // for each locality, trigger the initialize_solver action so that all ranks are initialized
     // and ready to receive work. For now we pass the Hamiltonian as a parameter, but
     // when we start multiple solvers with different H's we will change this
-    typedef initialize_solver_wrapper_action action_type;
-    std::vector<hpx::future<action_type::result_type>> futures;
+    typedef initialize_solver_wrapper_action action_init;
+    std::vector<hpx::future<action_init::result_type>> futures;
     for (auto l : localities) {
-        futures.push_back(hpx::async<action_type>(l,H));
+        futures.push_back(hpx::async<action_init>(l,H));
     }
     // don't go any further until all localities have finished their initialization
     hpx::wait_all(futures);
     futures.clear();
 
     // instead of executing a normal async call using
-    //   hpx::async(monitor, -1, counter1, 1000);
+    //   hpx::async(monitor, -1, 1000);
     // we will manually create a high-priority thread to poll the performance counters
     // we do this so that we get as much info as possible, but it still can be made to wait
-    // until a free work queue is available. This will be moved into a custom scheduler
-    // once that is ready.
+    // until a free work queue is available.
+    // @TODO This will be moved into a custom scheduler once it is ready.
     hpx::error_code ec(hpx::lightweight);
     hpx::applier::register_thread_nullary(
-            hpx::util::bind(&monitor, -1, counter1, 1000),
+            hpx::util::bind(&monitor, -1, 1000),
             "monitor",
             hpx::threads::pending, true, hpx::threads::thread_priority_critical,
             -1, hpx::threads::thread_stacksize_default, ec);
+
+    //
+    // create a fire and forget poll stdin thread for input commands
+    // for demonstration of node add/remove capabilties
+    // this will be replaced by a MongoDB database read thread
+    //
+    hpx::apply(poll_stdin);
 
     // every node has registered its own copy of the solver manager, we need the Ids on each node
     // so that we can invoke remote calls on them
@@ -284,7 +421,9 @@ int hpx_main(boost::program_options::variables_map& vm)
     + " num_rep=" + std::to_string(num_rep)
     << std::endl;
 
-    // get a pointer to the local object that was created on this locality
+    //
+    // get a pointer to the local solver scheduler object that was created on this locality
+    //
     solver_manager::solver_ptr wrappedSolver = spinsolver::scheduler.getSolver();
     wrappedSolver->setSolverIds(SolverIdForRank);
 
@@ -293,7 +432,7 @@ int hpx_main(boost::program_options::variables_map& vm)
     start_calc = std::chrono::system_clock::now();
 
     // on locality 0 we will act as master and execute the solver via the wrapper
-    // ranks will receive requests for solve operations from rank 0
+    // ranks will receive requests for solve operations from master process
     solver_manager::result_type x;
     if (rank==0) {
         x = wrappedSolver->spawn(num_rep, beta0, beta1, Ns);
