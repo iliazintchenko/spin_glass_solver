@@ -43,7 +43,7 @@ std::vector<std::string> ExecuteAndCapture(const std::vector<const char*> &comma
   kwsysProcess* process = kwsysProcess_New();
   kwsysProcess_SetCommand(process, &commands_with_null_term[0]);
   kwsysProcess_SetTimeout(process, timeout);
-  std::string PipeFileName = getTempFile("crayviz_Pipe.txt");
+  std::string PipeFileName = getTempFile("kwsys_tempfile.txt");
   kwsysProcess_SetPipeFile(process, kwsysProcess_Pipe_STDOUT, PipeFileName.c_str());
   //
   // Display the entire command for debug purposes and make it pretty
@@ -85,6 +85,37 @@ std::vector<std::string> ExecuteAndCapture(const std::vector<const char*> &comma
   delete []filebuffer;
   boost::filesystem::remove(PipeFileName.c_str());
   return std_out;
+}
+//---------------------------------------------------------------------------
+void ExecuteAndDetach(const std::vector<const char*> &commands, bool verbose)
+{
+  std::vector<std::string> std_out;
+  std::vector<const char*> commands_with_null_term = commands;
+  commands_with_null_term.push_back(0);
+  kwsysProcess* process = kwsysProcess_New();
+  kwsysProcess_SetCommand(process, &commands_with_null_term[0]);
+  kwsysProcess_SetTimeout(process, -1);
+  kwsysProcess_SetOption (process, kwsysProcess_Option_Detach, 1);
+  std::string PipeFileName = getTempFile("kwsys_tempfile.txt");
+  kwsysProcess_SetPipeFile(process, kwsysProcess_Pipe_STDOUT, PipeFileName.c_str());
+  //
+  // Display the entire command for debug purposes and make it pretty
+  //
+  if (verbose) {
+      std::string fullcommandline;
+      std::for_each(commands.begin(), commands.end(), [&](const std::string &piece){ fullcommandline += piece + " "; });
+      DisplayCommand(fullcommandline);
+  }
+  //
+  // Execute
+  //
+  try
+  {
+    kwsysProcess_Execute(process);
+    kwsysProcess_Disown(process);
+  }
+  catch (...) {}
+  kwsysProcess_Delete(process);
 }
 //---------------------------------------------------------------------------
 std::vector<std::string> ExecuteAndCaptureSSH(const std::vector<const char*> &commands,
