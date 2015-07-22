@@ -127,6 +127,13 @@ target_link_libraries(solver_reference
     ${Boost_LIBRARIES}
 )
 
+add_hpx_executable(heartbeat
+                   SOURCES src/heartbeat.cpp
+                   DEPENDENCIES iostreams_component)
+
+add_hpx_executable(heartbeat_console
+                   SOURCES src/heartbeat_console.cpp
+                   DEPENDENCIES iostreams_component)
 #--------------------------------------------------
 # Generate benchmarking scripts
 #--------------------------------------------------
