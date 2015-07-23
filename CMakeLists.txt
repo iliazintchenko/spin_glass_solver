@@ -67,7 +67,7 @@ endif()
 # Find HPX
 #--------------------------------------------------
 find_package(HPX REQUIRED)
-set(CMAKE_CXX_FLAGS ${HPX_CXX_FLAGS})
+#set(CMAKE_CXX_FLAGS ${HPX_CXX_FLAGS})
 include_directories(${HPX_INCLUDE_DIRS})
 
 #--------------------------------------------------

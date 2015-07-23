@@ -3,6 +3,7 @@
 #include <hpx/hpx_init.hpp>
 #include <hpx/hpx.hpp>
 #include <hpx/include/iostreams.hpp>
+#include <hpx/util/asio_util.hpp>
 
 // Boost includes
 #include <boost/program_options.hpp>
@@ -84,7 +85,7 @@ HPX_PLAIN_ACTION(initialize_solver_wrapper, initialize_solver_wrapper_action);
 //
 void test_shell_command(const std::string &name, int rank)
 {
-    std::vector<const char*> command_list;
+    std::vector<std::string> command_list;
     command_list.push_back("hostname");
     std::vector<std::string> result = ExecuteAndCapture(command_list, 30.0, false);
     for (auto & str_return : result) {
@@ -221,7 +222,7 @@ int run_solvers()
 //----------------------------------------------------------------------------
 int add_nodes(int N)
 {
-    std::vector<const char*> command_list;
+    std::vector<std::string> command_list;
     command_list.push_back("/Users/biddisco/build/spinmaster/bin/spinsolve");
     command_list.push_back("-Ihpx.parcel.port=7910");
     command_list.push_back("--hpx:threads=2");
@@ -236,6 +237,28 @@ int add_nodes(int N)
 //----------------------------------------------------------------------------
 int add_nodes_slurm(int N)
 {
+    // "Usage : %1:Session name ($1)"
+    // "        %2:Hours needed ($2)"
+    // "        %3:Minutes needed ($3)"
+    // "        %4:server-num-nodes ($4)"
+    // "        %5:server-ip:port ($5)"
+    // "        %6:Partition ($6)"
+    // "        %7:reservation (${7})"
+
+    std::string script = std::string(SPINSOLVE_SOURCE_DIR) + "/add_nodes.sh";
+    std::string my_ip = hpx::util::resolve_public_ip_address();
+    //
+    std::vector<std::string> command_list;
+//    command_list.push_back("srun");
+    command_list.push_back(script);
+    command_list.push_back("spinsolve_worker");
+    command_list.push_back(std::to_string(1));
+    command_list.push_back(std::to_string(0));
+    command_list.push_back(std::to_string(N));
+    command_list.push_back(my_ip + ":" + std::to_string(7910));
+    command_list.push_back("all");
+    command_list.push_back("");
+    ExecuteAndDetach(command_list, true);
     return 0;
 }
 

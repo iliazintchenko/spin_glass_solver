@@ -35,10 +35,11 @@ void DisplayCommand(const std::string &fullcommandline)
   std::cout << blanks.c_str() << std::endl << fullcommandline.c_str() << std::endl << blanks.c_str() << std::endl; 
 }
 //---------------------------------------------------------------------------
-std::vector<std::string> ExecuteAndCapture(const std::vector<const char*> &commands, double timeout, bool verbose)
+std::vector<std::string> ExecuteAndCapture(const std::vector<std::string> &commands, double timeout, bool verbose)
 {
   std::vector<std::string> std_out;
-  std::vector<const char*> commands_with_null_term = commands;
+  std::vector<const char*> commands_with_null_term;
+  std::for_each(commands.begin(), commands.end(), [&](const std::string &piece){ commands_with_null_term.push_back(piece.c_str()); });
   commands_with_null_term.push_back(0);
   kwsysProcess* process = kwsysProcess_New();
   kwsysProcess_SetCommand(process, &commands_with_null_term[0]);
@@ -87,10 +88,11 @@ std::vector<std::string> ExecuteAndCapture(const std::vector<const char*> &comma
   return std_out;
 }
 //---------------------------------------------------------------------------
-void ExecuteAndDetach(const std::vector<const char*> &commands, bool verbose)
+void ExecuteAndDetach(const std::vector<std::string> &commands, bool verbose)
 {
   std::vector<std::string> std_out;
-  std::vector<const char*> commands_with_null_term = commands;
+  std::vector<const char*> commands_with_null_term;
+  std::for_each(commands.begin(), commands.end(), [&](const std::string &piece){ commands_with_null_term.push_back(piece.c_str()); });
   commands_with_null_term.push_back(0);
   kwsysProcess* process = kwsysProcess_New();
   kwsysProcess_SetCommand(process, &commands_with_null_term[0]);
@@ -118,7 +120,7 @@ void ExecuteAndDetach(const std::vector<const char*> &commands, bool verbose)
   kwsysProcess_Delete(process);
 }
 //---------------------------------------------------------------------------
-std::vector<std::string> ExecuteAndCaptureSSH(const std::vector<const char*> &commands,
+std::vector<std::string> ExecuteAndCaptureSSH(const std::vector<std::string> &commands,
                           double timeout, 
                           const std::string &plink,
                           const std::string &user,
@@ -127,18 +129,18 @@ std::vector<std::string> ExecuteAndCaptureSSH(const std::vector<const char*> &co
                           bool verbose
                           )
 {
-  std::vector<const char*> full_command;
+  std::vector<std::string> full_command;
 #ifdef WIN32
-  full_command.push_back(plink.c_str());
+  full_command.push_back(plink);
   full_command.push_back("-ssh");
   full_command.push_back("-l");
-  full_command.push_back(user.c_str());
+  full_command.push_back(user);
   full_command.push_back("-i");
-  full_command.push_back(key.c_str());
-  full_command.push_back(loginnode.c_str());
+  full_command.push_back(key);
+  full_command.push_back(loginnode);
 #else
   full_command.push_back("ssh");
-  full_command.push_back(loginnode.c_str());
+  full_command.push_back(loginnode);
 #endif
   full_command.insert(full_command.end(), commands.begin(), commands.end());
   return ExecuteAndCapture(full_command, timeout, verbose);
