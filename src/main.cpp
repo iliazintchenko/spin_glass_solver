@@ -48,6 +48,21 @@ namespace spinsolver {
         FINALIZING,
         INVALID
     };
+    std::ostream& operator<<(std::ostream & os, status &s)
+    {
+      switch (s) {
+      case INITIALIZING:
+          os << "Initializing"; break;
+      case READY:
+          os << "Ready"; break;
+      case FINALIZING:
+          os << "Finalizing"; break;
+      case INVALID:
+          os << "Invalid";
+      }
+      return os;
+    }
+
     //
     hpx::id_type                   here;
     uint64_t                       rank;
@@ -402,7 +417,7 @@ int hpx_main(boost::program_options::variables_map& vm)
     //test_shell_command(name, rank);
 
     if (rank!=0) {
-        // although we should be connected to the console node, we will send
+        // although we should be connected to the console node, we send
         // a ready status to signal that we're setup and can accept work.
         hpx::apply(set_solver_state_action(), console, here, spinsolver::status::READY);
 
