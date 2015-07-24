@@ -82,6 +82,10 @@ namespace spinsolver {
     hpx::lcos::local::spinlock     state_mutex;
     std::map<hpx::id_type, status> locality_states;
     //
+    std::string                     partition;
+    std::string                     account;
+    std::string                     reservation;
+    //
     boost::shared_ptr<hamiltonian_type> hamiltonian;
     // on each node, we have one solver_manager instance
     solver_manager                 scheduler;
@@ -390,7 +394,10 @@ int add_nodes(int N)
 // execute slurm command to add nodes to running job
 // This is for productions use
 //----------------------------------------------------------------------------
-int add_nodes_slurm(int N, int hours, int mins, const std::string &partition, const std::string &reservation)
+int add_nodes_slurm(int N, int hours, int mins,
+        const std::string &partition,
+        const std::string &account,
+        const std::string &reservation)
 {
     // script params
     // "Usage : %1:Session name ($1)"
@@ -399,7 +406,8 @@ int add_nodes_slurm(int N, int hours, int mins, const std::string &partition, co
     // "        %4:server-num-nodes ($4)"
     // "        %5:server-ip:port ($5)"
     // "        %6:Partition ($6)"
-    // "        %7:reservation (${7})"
+    // "        %7:Account ($7)"
+    // "        %8:reservation (${8})"
 
     std::string script = std::string(SPINSOLVE_SOURCE_DIR) + "/scripts/add_nodes.sh";
     std::string my_ip = hpx::util::resolve_public_ip_address();
@@ -413,6 +421,7 @@ int add_nodes_slurm(int N, int hours, int mins, const std::string &partition, co
     command_list.push_back(std::to_string(N));
     command_list.push_back(my_ip + ":" + std::to_string(agas_port));
     command_list.push_back(partition);
+    command_list.push_back(account);
     command_list.push_back(reservation);
     ExecuteAndDetach(command_list, true);
     return 0;
@@ -469,7 +478,8 @@ int poll_stdin()
                     if (cmd.size() == 2) {
                         int N = boost::lexical_cast<int>(cmd[1]);
                         if (N>0) {
-                            add_nodes_slurm(N, 0, 10, "all", "");
+                            add_nodes_slurm(N, 0, 10,
+                                    spinsolver::partition, spinsolver::account, spinsolver::reservation);
                         }
                     }
                 }
@@ -543,7 +553,12 @@ int hpx_main(boost::program_options::variables_map& vm)
     const double beta1        = vm["beta1"].as<double>();
     const uint64_t num_rep    = vm["repetitions"].as<uint64_t>();
     const double complexity   = vm["complexity"].as<double>();
+    //
+    spinsolver::partition   = vm["partition"].as<std::string>();
+    spinsolver::account     = vm["account"].as<std::string>();
+    spinsolver::reservation = vm["reservation"].as<std::string>();
 
+    //
     if (vm.count("help")) {
         if (rank==0) {
             std::cout << spinsolver::desc << std::endl;
@@ -663,6 +678,20 @@ int main(int argc, char* argv[])
 {
     spinsolver::desc.add_options()
                     ("help,h", "Display command line options help");
+
+    // options for slurm job control
+    spinsolver::desc.add_options()
+                    ("partition",
+                            boost::program_options::value<std::string>()->default_value("all"),
+                            "The slurm partition to use for node allocation");
+    spinsolver::desc.add_options()
+                    ("account",
+                            boost::program_options::value<std::string>()->default_value(""),
+                            "The slurm account to use when allocating nodes");
+    spinsolver::desc.add_options()
+                    ("reservation",
+                            boost::program_options::value<std::string>()->default_value(""),
+                            "The slurm reservation to use when allocating nodes");
     spinsolver::desc.add_options()
                     ("input,i",
                             boost::program_options::value<std::string>()->default_value(SPINSOLVE_SOURCE_DIR "/testdata/Instances128Spins/lattice/128random0.lat"),

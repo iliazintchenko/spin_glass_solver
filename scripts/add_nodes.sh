@@ -8,8 +8,9 @@ echo "        %2:Hours needed ($2)"
 echo "        %3:Minutes needed ($3)"
 echo "        %4:server-num-nodes ($4)"
 echo "        %5:server-ip:port ($5)"
-echo "        %6:Partition ($6)"
-echo "        %7:reservation (${7})"
+echo "        %6:partition ($6)"
+echo "        %7:account ($7)"
+echo "        %8:reservation (${8})"
 echo ""
 
 # -------------------------------------------------------------------
@@ -24,6 +25,7 @@ NSERVERS=$[ $4 ]
 
 echo "Nservers is "$NSERVERS
 PARTITION=""
+ACCOUNT=""
 RESERVATION=""
 # create strings for partition and reservation
 if [ "${6}" != "" ]
@@ -32,7 +34,11 @@ then
 fi
 if [ "${7}" != "" ]
 then
- RESERVATION='#SBATCH --reservation='${7}
+ACCOUNT='#SBATCH --account='${7}
+fi
+if [ "${8}" != "" ]
+then
+ RESERVATION='#SBATCH --reservation='${8}
 fi
 
 # create the job script
@@ -46,6 +52,7 @@ cat << _EOF_ > ./submit-job.bash
 #SBATCH --time=$2:$3:00
 #SBATCH --nodes=$4
 $PARTITION
+$ACCOUNT
 $RESERVATION
 
 module load gcc/4.9.0
