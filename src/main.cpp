@@ -47,6 +47,7 @@ namespace spinsolver {
         INITIALIZING,
         READY,
         FINALIZING,
+        DISCONNECTING,
         INVALID
     };
     std::ostream& operator<<(std::ostream & os, status &s)
@@ -60,6 +61,8 @@ namespace spinsolver {
           os << "Ready"; break;
       case FINALIZING:
           os << "Finalizing"; break;
+      case DISCONNECTING:
+          os << "Disconnecting"; break;
       case INVALID:
           os << "Invalid";
       }
@@ -122,14 +125,14 @@ int set_solver_state(hpx::id_type locality, spinsolver::status state)
 {
     boost::lock_guard<hpx::lcos::local::spinlock> lock(spinsolver::state_mutex);
     if (spinsolver::locality_states.find(locality)!=spinsolver::locality_states.end()) {
-        std::cout << "Locality " << locality
-                << " state changing from "  << spinsolver::locality_states[locality]
-                << " to " << state << std::endl;
+//        std::cout << "Locality " << locality
+//                << " state changing from "  << spinsolver::locality_states[locality]
+//                << " to " << state << std::endl;
         spinsolver::locality_states[locality] = state;
     }
     else {
-        std::cout << "Locality " << locality
-                  << " state " << state << std::endl;
+//        std::cout << "Locality " << locality
+//                  << " state " << state << std::endl;
         spinsolver::locality_states[locality] = state;
     }
     return 1;
@@ -177,14 +180,14 @@ std::size_t get_solver_state_size()
 //----------------------------------------------------------------------------
 hpx::future<int> init_node(const hpx::id_type locality)
 {
-    std::cout << "init_node for " << locality << std::endl;
+    // std::cout << "init_node for " << locality << std::endl;
     // trigger the initialize_solver action so that the locality is initialized
     // and ready to receive work. For now we pass the Hamiltonian as a parameter, but
     // when we start multiple solvers with different H's we will change this
     typedef initialize_solver_wrapper_action::result_type res_type;
     hpx::future<res_type> fut = hpx::async<initialize_solver_wrapper_action>(locality, *spinsolver::hamiltonian);
     return fut.then([=](hpx::future<res_type> f) {
-            std::cout << "Completed remote init, setting READY state " << std::endl;
+            // std::cout << "Completed remote init, setting READY state " << std::endl;
             return set_solver_state(locality, spinsolver::status::READY);
         }
     );
@@ -224,7 +227,7 @@ void stop_monitor(hpx::promise<void> p)
 //----------------------------------------------------------------------------
 // utility, get the counter id for a given name and locality
 //----------------------------------------------------------------------------
-hpx::naming::id_type get_counter(std::string &countername, int locality)
+hpx::naming::id_type get_counter(std::string countername, int locality)
 {
     std::string counter1 = "/threads{locality#*/total}/idle-rate";
     std::string replacement = "#" + boost::lexical_cast<std::string>(locality);
@@ -246,26 +249,33 @@ int monitor(double runfor, boost::uint64_t pause)
 #if defined(BOOST_WINDOWS) && HPX_USE_WINDOWS_PERFORMANCE_COUNTERS != 0
     hpx::register_shutdown_function(&uninstall_windows_counters);
 #endif
+    // timing
     boost::int64_t zero_time = 0;
+    hpx::util::high_resolution_timer t;
+
+    // stop this thread when shutdown is initiated
     hpx::promise<void> stop_flag;
     hpx::register_shutdown_function(boost::bind(&stop_monitor, stop_flag));
-
     hpx::future<void> f = stop_flag.get_future();
 
+    // numranks connectd
     uint64_t initial_ranks = hpx::get_num_localities().get();
 
-    hpx::util::high_resolution_timer t;
+    // output format object
+    boost::format formatter("Locality %s %12s, %s, %04d, %6.1f[s], %5.2f%%\n");
+    std::string counter_template = "/threads{locality#*/total}/idle-rate";
+
     while (runfor<0 || t.elapsed()<runfor)
     {
-        hpx::state st;
+        // try to detect when hpx is shutting down
+        hpx::state run_state;
         hpx::runtime* rt = hpx::get_runtime_ptr();
         if (NULL == rt) {
             // we're probably either starting or stopping
-            st = hpx::state_running;
+            run_state = hpx::state_running;
         }
-        else st = (rt->get_thread_manager().status());
-
- //       std::cout << "hpx runtime state is " << (int)st << std::endl;
+        else run_state = (rt->get_thread_manager().status());
+ //       std::cout << "hpx runtime state is " << (int)run_state << std::endl;
 
         // stop collecting data when the runtime is exiting
         // @TODO find out why quit does not work.
@@ -273,7 +283,7 @@ int monitor(double runfor, boost::uint64_t pause)
         if (closing) return 0;
         if (f.is_ready()) return 0;
 
-        // make a copy of the states map and use that for querying
+        // make a copy of the locality states map and use that for querying
         // we want to avoid races during access.
         // @TODO remove this when stable
         std::map<hpx::id_type, spinsolver::status> locality_states_copy;
@@ -285,7 +295,7 @@ int monitor(double runfor, boost::uint64_t pause)
         uint64_t current_ranks = locality_states_copy.size(); //get_solver_state_size();
         std::cout << std::flush;
         if (initial_ranks!=current_ranks) {
-            std::cout << "\nRanks changed from " << initial_ranks << " to " << current_ranks << std::endl << std::flush;
+//            std::cout << "Ranks changed from " << initial_ranks << " to " << current_ranks << std::endl << std::flush;
             initial_ranks = current_ranks;
         }
 
@@ -293,45 +303,52 @@ int monitor(double runfor, boost::uint64_t pause)
         // Query the performance counter for each connected locality.
         //
         for (auto l : locality_states_copy) {
+            // setup empty counter value
+            using namespace hpx::performance_counters;
+            counter_value value(0);
+            //
+            int rank = hpx::naming::get_locality_id_from_id(l.first);
             spinsolver::status state = get_solver_state(locality_states_copy, l.first, true);
+            //
+            //std::cout << "Locality " << l.first << " " << state << std::endl;
             if (state!=spinsolver::status::READY) {
-                std::cout << "Locality " << l.first << " " << state << std::endl;
                 if (state==spinsolver::status::CONNECTING) {
                     set_solver_state(l.first, spinsolver::status::INITIALIZING);
                     hpx::future<int> fut = init_node(l.first);
                     // just drop the future, will not block in destructor
                 }
-                continue;
             }
-
-            int rank = hpx::naming::get_locality_id_from_id(l.first);
-            std::string counter_template = "/threads{locality#*/total}/idle-rate";
-            hpx::naming::id_type id = get_counter(counter_template, rank);
-            using namespace hpx::performance_counters;
-            // get the current counter data and reset it to zero
-            counter_value value = stubs::performance_counter::get_value(id, true);
-
-            if (status_is_valid(value.status_))
-            {
+            else {
+                hpx::naming::id_type id = get_counter(counter_template, rank);
+                // get the current counter data and reset it to zero
+                value = stubs::performance_counter::get_value(id, true);
+            }
+            if (state==spinsolver::READY && status_is_valid(value.status_)) {
                 if (!zero_time)
                     zero_time = value.time_;
 
-                std::cout << (boost::format("Status ranks : %03i, counter : %s, %04d, %6.1f[s], %5.2f%%\n")
-                % rank
-                % counter_template
-                % value.count_
-                % double((value.time_ - zero_time) * 1e-9)
-                % (value.value_*0.01));
-
+                std::cout << ( formatter
+                        % l.first % state
+                        % " idle-rate"
+                        % value.count_
+                        % double((value.time_ - zero_time) * 1e-9)
+                        % (value.value_*0.01) );
 #if defined(BOOST_WINDOWS) && HPX_USE_WINDOWS_PERFORMANCE_COUNTERS != 0
                 update_windows_counters(value.value_);
 #endif
             }
+            else {
+                std::cout << ( formatter
+                        % l.first % state
+                        % "no-counter"
+                        % 0 % 0.0 % 0.0 );
+            }
         }
-        // Schedule a wakeup.
+
+        // Schedule a suspend/wakeup after each check
         hpx::this_thread::suspend(pause);
     }
-
+    // exit when thread is terminated or shutting down
     return 0;
 }
 
@@ -472,7 +489,7 @@ int poll_stdin()
                             << line << "'" << std::endl;
                 }
             }
-            std::cout << "\n> ";
+            std::cout << "\n";
         }
         else {
             hpx::this_thread::suspend(500);
