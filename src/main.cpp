@@ -409,7 +409,7 @@ int add_nodes_slurm(int N, int hours, int mins,
     // "        %7:Account ($7)"
     // "        %8:reservation (${8})"
 
-    std::string script = std::string(SPINSOLVE_SOURCE_DIR) + "/scripts/add_nodes.sh";
+    std::string script = std::string(SPINSOLVE_SOURCE_DIR) + "/scripts/" + std::string(SPINSOLVE_SCRIPT_NAME);
     std::string my_ip = hpx::util::resolve_public_ip_address();
     int agas_port = boost::lexical_cast<std::size_t>(hpx::get_config_entry("hpx.agas.port", 0));
     //

@@ -34,6 +34,29 @@ SET (CMAKE_ARCHIVE_OUTPUT_DIRECTORY
 #--------------------------------------------------
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
+#------------------------------------------------------------------------------
+# Detect which machine we are running on to setup defaults for convenience
+#------------------------------------------------------------------------------
+SITE_NAME(hostname)
+if(hostname MATCHES "unknown")
+  set(hostname $ENV{HOSTNAME})
+endif()
+message("hostname appears to be ${hostname}")
+if(hostname MATCHES bbpbg1)
+  set(BGQ 1)
+  message("Running on BGQ")
+elseif(hostname MATCHES bbpbg2)
+  set(BGAS 1)
+  message("Running on BGAS")
+elseif(hostname MATCHES bbpviz1)
+  set(BGVIZ 1)
+  message("Running on BBP-viz")
+elseif(hostname MATCHES monch)
+  set(MONCH 1)
+  message("Running on monch")
+endif()
+message("CMAKE_SYSTEM is ${CMAKE_SYSTEM} with hostname ${hostname} and processor ${CMAKE_SYSTEM_PROCESSOR}" )
+
 #--------------------------------------------------
 # Flags
 #--------------------------------------------------
@@ -88,7 +111,11 @@ include_directories(async)
 add_definitions(-DSPINSOLVE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\")
 add_definitions(-DSPINSOLVE_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\")
 add_definitions(-DKWSYS_NAMESPACE=kwsys)
-
+if (BGAS)
+  add_definitions(-DSPINSOLVE_SCRIPT_NAME=\"add_nodes-bgas.sh\")
+elseif (MONCH)
+  add_definitions(-DSPINSOLVE_SCRIPT_NAME=\"add_nodes-monch.sh\")
+endif()
 #--------------------------------------------------
 # Library
 #--------------------------------------------------
