@@ -114,6 +114,7 @@ target_link_libraries(spinsolve
     iostreams_component 
     ${Boost_LIBRARIES}
 )
+target_compile_definitions(spinsolve PUBLIC -DAPP_BINARY_NAME=\"$<TARGET_FILE:spinsolve>\")
 
 #--------------------------------------------------
 # Exe, reference code that runs on single local thread
