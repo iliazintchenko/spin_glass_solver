@@ -228,16 +228,16 @@ void stop_monitor(hpx::promise<void> p)
 //----------------------------------------------------------------------------
 // utility, get the counter id for a given name and locality
 //----------------------------------------------------------------------------
-hpx::naming::id_type get_counter(std::string countername, int locality)
+hpx::future<hpx::id_type> get_counter(std::string countername, int locality)
 {
     std::string counter1 = "/threads{locality#*/total}/idle-rate";
     std::string replacement = "#" + boost::lexical_cast<std::string>(locality);
     boost::replace_all(countername, "#*", replacement);
     //std::cout << "Generated counter name " << final.c_str() << std::endl;
-    hpx::naming::id_type id = hpx::performance_counters::get_counter(countername);
-    if (!id) {
-        std::cout << (boost::format("error: performance counter not found (%s)") % countername) << std::endl;
-    }
+    hpx::future<hpx::id_type> id = hpx::performance_counters::get_counter_async(countername);
+//    if (!id) {
+//        std::cout << (boost::format("error: performance counter not found (%s)") % countername) << std::endl;
+//    }
     return id;
 }
 
@@ -247,9 +247,6 @@ hpx::naming::id_type get_counter(std::string countername, int locality)
 //----------------------------------------------------------------------------
 int monitor(double runfor, boost::uint64_t pause)
 {
-#if defined(BOOST_WINDOWS) && HPX_USE_WINDOWS_PERFORMANCE_COUNTERS != 0
-    hpx::register_shutdown_function(&uninstall_windows_counters);
-#endif
     // timing
     boost::int64_t zero_time = 0;
     hpx::util::high_resolution_timer t;
@@ -303,49 +300,77 @@ int monitor(double runfor, boost::uint64_t pause)
         //
         // Query the performance counter for each connected locality.
         //
+        using namespace hpx::performance_counters;
+        std::vector< hpx::future<int> > future_counters;
+        std::vector< std::tuple<hpx::id_type, spinsolver::status, counter_value> > final_counters;
+        final_counters.resize(locality_states_copy.size());
+        //
+        int index = 0;
         for (auto l : locality_states_copy) {
-            // setup empty counter value
-            using namespace hpx::performance_counters;
-            counter_value value(0);
             //
-            int rank = hpx::naming::get_locality_id_from_id(l.first);
             spinsolver::status state = get_solver_state(locality_states_copy, l.first, true);
             //
-            //std::cout << "Locality " << l.first << " " << state << std::endl;
             if (state!=spinsolver::status::READY) {
                 if (state==spinsolver::status::CONNECTING) {
                     set_solver_state(l.first, spinsolver::status::INITIALIZING);
-                    hpx::future<int> fut = init_node(l.first);
-                    // just drop the future, will not block in destructor
+                    init_node(l.first); // drop the returned future, will not block
                 }
+                final_counters[index] = std::make_tuple(l.first, state, counter_value(0));
             }
             else {
-                hpx::naming::id_type id = get_counter(counter_template, rank);
-                // get the current counter data and reset it to zero
-                value = stubs::performance_counter::get_value(id, true);
+                using hpx::performance_counters::stubs::performance_counter;
+                int rank = hpx::naming::get_locality_id_from_id(l.first);
+                // Get the performance counter Id, then
+                // get the performance counter value
+                // then set the value in the tuple vector
+                // and add the done flag to the counters vector
+                hpx::future<int> temp = get_counter(counter_template, rank).then(
+                        hpx::launch::sync,
+                        [=,&final_counters](hpx::future<hpx::id_type> cnt) -> hpx::future<hpx::performance_counters::counter_value>
+                    {
+                        return performance_counter::get_value_async(cnt.get(), true);
+                    }).then(
+                        hpx::launch::sync,
+                        [=,&final_counters](hpx::future<hpx::performance_counters::counter_value> val) -> int
+                    {
+                        final_counters[index] = std::make_tuple(l.first, state, val.get());
+                        return 1;
+                    }
+                );
+                future_counters.push_back(std::move(temp));
             }
-            if (state==spinsolver::READY && status_is_valid(value.status_)) {
-                if (!zero_time)
-                    zero_time = value.time_;
-
-                std::cout << ( formatter
-                        % l.first % state
-                        % " idle-rate"
-                        % value.count_
-                        % double((value.time_ - zero_time) * 1e-9)
-                        % (value.value_*0.01) );
-#if defined(BOOST_WINDOWS) && HPX_USE_WINDOWS_PERFORMANCE_COUNTERS != 0
-                update_windows_counters(value.value_);
-#endif
-            }
-            else {
-                std::cout << ( formatter
-                        % l.first % state
-                        % "no-counter"
-                        % 0 % 0.0 % 0.0 );
-            }
+            index++;
         }
+        when_all(future_counters).then(
+                hpx::launch::sync,
+                [&](hpx::future<std::vector< hpx::future<int>>> f)
+                {
+                for (auto c : final_counters) {
+                    using namespace hpx::performance_counters;
+                    hpx::id_type    &locality = std::get<0>(c);
+                    spinsolver::status &state = std::get<1>(c);
+                    counter_value      &value = std::get<2>(c);
+                    if (state==spinsolver::READY && status_is_valid(value.status_)) {
+                        if (!zero_time)
+                            zero_time = value.time_;
 
+                        std::cout << ( formatter
+                                % locality % state
+                                % " idle-rate"
+                                % value.count_
+                                % double((value.time_ - zero_time) * 1e-9)
+                                % (value.value_*0.01) );
+                    }
+                    else {
+                        std::cout << ( formatter
+                                % locality % state
+                                % "no-counter"
+                                % 0 % 0.0 % 0.0 );
+                    }
+                }
+                }
+        // add a get to the continuation so we can block until this is done
+        ).get();
         // Schedule a suspend/wakeup after each check
         hpx::this_thread::suspend(pause);
     }
@@ -584,7 +609,7 @@ int hpx_main(boost::program_options::variables_map& vm)
     // @TODO This will be moved into a custom scheduler once it is ready.
     hpx::error_code ec(hpx::lightweight);
     hpx::applier::register_thread_nullary(
-            hpx::util::bind(&monitor, -1, 1000),
+            hpx::util::bind(&monitor, -1, 5000),
             "monitor",
             hpx::threads::pending, true, hpx::threads::thread_priority_critical,
             -1, hpx::threads::thread_stacksize_default, ec);
