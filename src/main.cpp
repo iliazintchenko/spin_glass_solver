@@ -105,14 +105,11 @@ int initialize_solver_wrapper(const hamiltonian_type &H)
     spinsolver::os_threads  = hpx::get_os_thread_count();
     spinsolver::remotes     = hpx::find_remote_localities();
     spinsolver::localities  = hpx::find_all_localities();
-    //
-    char const* msg = "Creating Solver Wrapper from OS-thread %1% on locality %2% rank %3% hostname %4%";
-    std::cout << (boost::format(msg) % spinsolver::current % hpx::get_locality_id() % spinsolver::rank % spinsolver::name.c_str()) << std::endl;
-    //
+
     // setup the solver manager
     spinsolver::scheduler.initialize(H);
     //
-//    char const* msg = "Creating Solver Wrapper from OS-thread %1% on locality %2% rank %3% hostname %4%";
+    char const* msg = "Created Solver Wrapper from OS-thread %1% on locality %2% rank %3% hostname %4%";
     std::cout << (boost::format(msg) % spinsolver::current % hpx::get_locality_id() % spinsolver::rank % spinsolver::name.c_str()) << std::endl;
     return 1;
 }
@@ -423,7 +420,8 @@ int add_nodes_slurm(int N, int hours, int mins,
     command_list.push_back(partition);
     command_list.push_back(account);
     command_list.push_back(reservation);
-    ExecuteAndDetach(command_list, true);
+    std::vector<std::string> output = ExecuteAndCapture(command_list, 0.0, true);
+    //std::cout << output.c_str();
     return 0;
 }
 
