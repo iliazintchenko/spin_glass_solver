@@ -38,10 +38,11 @@ set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # Detect which machine we are running on to setup defaults for convenience
 #------------------------------------------------------------------------------
 SITE_NAME(hostname)
-if(hostname MATCHES "unknown")
+if(hostname MATCHES "unknown" OR hostname MATCHES "No")
+  message("unknown hostname \"${hostname}\", using ENV$ $ENV{HOSTNAME} instead")
   set(hostname $ENV{HOSTNAME})
 endif()
-message("hostname appears to be ${hostname}")
+
 if(hostname MATCHES bbpbg1)
   set(BGQ 1)
   message("Running on BGQ")
