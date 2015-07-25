@@ -63,7 +63,7 @@ module load gmp/5.1.3
 
 cd /gpfs/bbp.cscs.ch/home/biddisco/gcc/bgas/build/spinmaster
 
-CMD="srun --ntasks=$NSERVERS --ntasks-per-node=1 bin/spinsolve --hpx:ignore-batch-env --hpx:agas=$5 --hpx:connect --hpx:threads=16"
+CMD="srun --ntasks=$NSERVERS --ntasks-per-node=1 --exclusive bin/spinsolve --hpx:ignore-batch-env --hpx:agas=$5 --hpx:connect --hpx:threads=16"
 echo "command to run is "\$CMD
 
 eval "\$CMD"
