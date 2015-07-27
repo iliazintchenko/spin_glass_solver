@@ -89,7 +89,6 @@ namespace spinsolver {
         status          state;
         hpx::id_type    solver_wrapper;
         hpx::id_type    idle_counter;
-//        locality_data(const locality_data &other) : state(other.state), solver_wrapper(other.solver_wrapper) {}
     };
     //
     hpx::id_type                   here;
@@ -168,8 +167,6 @@ int set_solver_state_data(const hpx::id_type &locality,
         hpx::id_type wrapper,
         hpx::id_type idle)
 {
-    // this
-//    boost::lock_guard<hpx::lcos::local::spinlock> lock(spinsolver::state_mutex);
     int ok = set_solver_state_no_lock(locality, state);
     if (ok) {
         spinsolver::locality_states[locality].solver_wrapper = wrapper;
@@ -241,6 +238,8 @@ hpx::future<int> init_node(const hpx::id_type locality)
                hpx::util::unwrapped([&](hpx::id_type wrapper, hpx::id_type counter) -> int
         {
             set_solver_state_data(locality, spinsolver::status::READY, wrapper, counter);
+            solver_manager::solver_ptr wrappedSolver = spinsolver::scheduler.getSolver();
+            wrappedSolver->addSolverId(wrapper);
             return 1;
         }),
         wrapper, counter);
@@ -323,14 +322,6 @@ int monitor(double runfor, boost::uint64_t pause)
         {
             boost::lock_guard<hpx::lcos::local::spinlock> lock(spinsolver::state_mutex);
             //
-            uint64_t current_ranks = spinsolver::locality_states.size(); //get_solver_state_size();
-            std::cout << std::flush;
-            if (initial_ranks!=current_ranks) {
-    //            std::cout << "Ranks changed from " << initial_ranks << " to " << current_ranks << std::endl << std::flush;
-                initial_ranks = current_ranks;
-            }
-
-            //
             // Query the performance counter for each connected locality.
             //
             final_counters.resize(spinsolver::locality_states.size());
@@ -355,7 +346,6 @@ int monitor(double runfor, boost::uint64_t pause)
                         {
                             final_counters[index] = std::make_tuple(l.first, state, val.get());
                             return hpx::make_ready_future<int>(1);
-
                         });
                         future_counters.push_back(std::move(temp));
                     }
@@ -366,6 +356,7 @@ int monitor(double runfor, boost::uint64_t pause)
                 index++;
             }
         }
+        //
         when_all(future_counters).then(
                 hpx::launch::sync,
                 [&](hpx::future<std::vector< hpx::future<int>>> f)
@@ -470,7 +461,7 @@ int add_nodes_slurm(int N, int hours, int mins,
     command_list.push_back(account);
     command_list.push_back(reservation);
     std::vector<std::string> output = ExecuteAndCapture(command_list, 0.0, true);
-    //std::cout << output.c_str();
+//    std::cout << output.c_str();
     return 0;
 }
 
@@ -634,7 +625,7 @@ int hpx_main(boost::program_options::variables_map& vm)
     // @TODO This will be moved into a custom scheduler once it is ready.
     hpx::error_code ec(hpx::lightweight);
     hpx::applier::register_thread_nullary(
-            hpx::util::bind(&monitor, -1, 5000),
+            hpx::util::bind(&monitor, -1, 1000),
             "monitor",
             hpx::threads::pending, true, hpx::threads::thread_priority_critical,
             -1, hpx::threads::thread_stacksize_default, ec);
