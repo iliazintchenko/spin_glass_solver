@@ -4,6 +4,7 @@
 #include <hpx/hpx.hpp>
 #include <hpx/include/iostreams.hpp>
 #include <hpx/util/asio_util.hpp>
+#include <hpx/lcos/local/dataflow.hpp>
 
 // Boost includes
 #include <boost/program_options.hpp>
@@ -235,18 +236,14 @@ hpx::future<int> init_node(const hpx::id_type locality)
                 boost::lexical_cast<std::string>(hpx::naming::get_locality_id_from_id(locality)));
         hpx::future<hpx::id_type> counter = get_counter(counter_template, locality);
         //
-        typedef hpx::util::tuple<
-               hpx::future<hpx::id_type>
-             , hpx::future<hpx::id_type> > result_type;
-        //
-        return when_all(wrapper, counter).then(
-                hpx::launch::sync,
-                [&](hpx::future<result_type> data) -> int
+        return hpx::lcos::local::dataflow(
+               hpx::launch::sync,
+               hpx::util::unwrapped([&](hpx::id_type wrapper, hpx::id_type counter) -> int
         {
-            result_type res = data.get();
-            set_solver_state_data(locality, spinsolver::status::READY, hpx::util::get<0>(res).get(), hpx::util::get<1>(res).get());
+            set_solver_state_data(locality, spinsolver::status::READY, wrapper, counter);
             return 1;
-        });
+        }),
+        wrapper, counter);
     });
 }
 
