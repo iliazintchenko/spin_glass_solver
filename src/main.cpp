@@ -319,42 +319,47 @@ int monitor(double runfor, boost::uint64_t pause)
         using hpx::performance_counters::stubs::performance_counter;
         std::vector< hpx::future<int> > future_counters;
         std::vector< std::tuple<hpx::id_type, spinsolver::status, counter_value> > final_counters;
+
+        // make a copy of the map so we can iterate safely and not worry about new connections
+        std::map<hpx::id_type, spinsolver::locality_data> locality_states_copy;
         {
             boost::lock_guard<hpx::lcos::local::spinlock> lock(spinsolver::state_mutex);
+            locality_states_copy = spinsolver::locality_states;
+        }
+
+        //
+        // Query the performance counter for each connected locality.
+        //
+        final_counters.resize(locality_states_copy.size());
+        //
+        int index = 0;
+        for (auto l : locality_states_copy) {
+            // no need to lock, this is a safe copy
+            spinsolver::status state = l.second.state;
             //
-            // Query the performance counter for each connected locality.
-            //
-            final_counters.resize(spinsolver::locality_states.size());
-            //
-            int index = 0;
-            for (auto l : spinsolver::locality_states) {
-                //
-                spinsolver::status state = get_solver_state(spinsolver::locality_states, l.first, true);
-                //
-                if (state!=spinsolver::status::READY) {
-                    final_counters[index] = std::make_tuple(l.first, state, counter_value(0));
-                    if (state==spinsolver::status::CONNECTING) {
-                        set_solver_state_no_lock(l.first, spinsolver::status::INITIALIZING);
-                        init_node(l.first); // drop the returned future, will not block
-                    }
+            if (state!=spinsolver::status::READY) {
+                final_counters[index] = std::make_tuple(l.first, state, counter_value(0));
+                if (state==spinsolver::status::CONNECTING) {
+                    set_solver_state(l.first, spinsolver::status::INITIALIZING);
+                    init_node(l.first); // drop the returned future, will not block
+                }
+            }
+            else {
+                if (locality_states_copy[l.first].idle_counter!=hpx::naming::invalid_id) {
+                    hpx::future<int> temp = performance_counter::get_value_async(spinsolver::locality_states[l.first].idle_counter, true).then(
+                        hpx::launch::sync,
+                        [=,&final_counters](hpx::future<counter_value> val) -> hpx::future<int>
+                    {
+                        final_counters[index] = std::make_tuple(l.first, state, val.get());
+                        return hpx::make_ready_future<int>(1);
+                    });
+                    future_counters.push_back(std::move(temp));
                 }
                 else {
-                    if (spinsolver::locality_states[l.first].idle_counter!=hpx::naming::invalid_id) {
-                        hpx::future<int> temp = performance_counter::get_value_async(spinsolver::locality_states[l.first].idle_counter, true).then(
-                            hpx::launch::sync,
-                            [=,&final_counters](hpx::future<counter_value> val) -> hpx::future<int>
-                        {
-                            final_counters[index] = std::make_tuple(l.first, state, val.get());
-                            return hpx::make_ready_future<int>(1);
-                        });
-                        future_counters.push_back(std::move(temp));
-                    }
-                    else {
-                        throw std::runtime_error("Locality READY, but no counter");
-                    }
+                    throw std::runtime_error("Locality READY, but no counter");
                 }
-                index++;
             }
+            index++;
         }
         //
         when_all(future_counters).then(
