@@ -5,11 +5,15 @@
 #include <hpx/include/iostreams.hpp>
 #include <hpx/util/asio_util.hpp>
 #include <hpx/lcos/local/dataflow.hpp>
+#include <hpx/lcos/local/mutex.hpp>
+#include <hpx/lcos/local/shared_mutex.hpp>
+//
 
 // Boost includes
 #include <boost/program_options.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/thread/locks.hpp>
 
 // STL includes
 #include <string>
@@ -91,17 +95,17 @@ namespace spinsolver {
         hpx::id_type    idle_counter;
     };
     //
-    hpx::id_type                   here;
-    uint64_t                       rank;
-    std::string                    name;
-    uint64_t                       nranks;
-    std::size_t                    current;
-    std::size_t                    os_threads;
-    std::vector<hpx::id_type>      remotes;
-    std::vector<hpx::id_type>      localities;
+    hpx::id_type                            here;
+    uint64_t                                rank;
+    std::string                             name;
+    uint64_t                                nranks;
+    std::size_t                             current;
+    std::size_t                             os_threads;
+    std::vector<hpx::id_type>               remotes;
+    std::vector<hpx::id_type>               localities;
     //
-    hpx::lcos::local::spinlock     state_mutex;
-    std::map<hpx::id_type, locality_data> locality_states;
+    hpx::lcos::local::shared_mutex          state_mutex;
+    std::map<hpx::id_type, locality_data>   locality_states;
     //
     std::string                     partition;
     std::string                     account;
@@ -143,22 +147,25 @@ HPX_PLAIN_ACTION(initialize_solver_wrapper, initialize_solver_wrapper_action);
 //----------------------------------------------------------------------------
 // Signal our state, used by a remote node to tell use when it is ready
 //----------------------------------------------------------------------------
-int set_solver_state_no_lock(const hpx::id_type &locality, spinsolver::status state)
+int set_solver_state(const hpx::id_type &locality, spinsolver::status state)
 {
-    if (spinsolver::locality_states.find(locality)!=spinsolver::locality_states.end()) {
-        spinsolver::locality_states[locality].state = state;
+    auto it = spinsolver::locality_states.find(locality);
+    if (it!=spinsolver::locality_states.end()) {
+       (*it).second.state = state;
     }
     else {
-        spinsolver::locality_states[locality].state = state;
+        std::cout << "Adding a state for locality " << locality << std::endl;
+        spinsolver::locality_states[locality] =
+                {state, hpx::naming::invalid_id, hpx::naming::invalid_id};
     }
     return 1;
 }
 
-//----------------------------------------------------------------------------
-int set_solver_state(const hpx::id_type &locality, spinsolver::status state)
+int add_solver_state(const hpx::id_type &locality, spinsolver::status state)
 {
-    boost::lock_guard<hpx::lcos::local::spinlock> lock(spinsolver::state_mutex);
-    return set_solver_state_no_lock(locality, state);
+    std::cout << "Action received from locality " << locality << std::endl;
+    boost::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
+    return set_solver_state(locality, state);
 }
 
 //----------------------------------------------------------------------------
@@ -167,28 +174,29 @@ int set_solver_state_data(const hpx::id_type &locality,
         hpx::id_type wrapper,
         hpx::id_type idle)
 {
-    int ok = set_solver_state_no_lock(locality, state);
-    if (ok) {
-        spinsolver::locality_states[locality].solver_wrapper = wrapper;
-        spinsolver::locality_states[locality].idle_counter   = idle;
+    auto it = spinsolver::locality_states.find(locality);
+    if (it!=spinsolver::locality_states.end()) {
+        (*it).second = {state, wrapper, idle};
     }
-    return ok;
+    else {
+        spinsolver::locality_states[locality] = {state, wrapper, idle};
+    }
+    return 1;
 }
 
 // Define the boilerplate code necessary for action invocation
-HPX_PLAIN_ACTION(set_solver_state, set_solver_state_action);
+HPX_PLAIN_ACTION(add_solver_state, add_solver_state_action);
 
 //----------------------------------------------------------------------------
 // Fetch last reported state from the local map of localities which is
 // populed by the nodes calling set_solver_state()
 // two versions, one locks mutex, the other does not
 //----------------------------------------------------------------------------
-const spinsolver::status get_solver_state(
-        const std::map<hpx::id_type, spinsolver::locality_data> &statemap,
-        hpx::id_type locality, bool locked)
+const spinsolver::status get_solver_state(hpx::id_type locality)
 {
-    if (statemap.find(locality)!=statemap.end()) {
-        return statemap.at(locality).state;
+    boost::shared_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
+    if (spinsolver::locality_states.find(locality)!=spinsolver::locality_states.end()) {
+        return spinsolver::locality_states.at(locality).state;
     }
     else {
         return spinsolver::status::INVALID;
@@ -196,20 +204,11 @@ const spinsolver::status get_solver_state(
 }
 
 //----------------------------------------------------------------------------
-const spinsolver::status get_solver_state(
-        const std::map<hpx::id_type, spinsolver::locality_data> &statemap,
-        hpx::id_type locality)
-{
-    boost::lock_guard<hpx::lcos::local::spinlock> lock(spinsolver::state_mutex);
-    return get_solver_state(statemap, locality, true);
-}
-
-//----------------------------------------------------------------------------
 // Get number of nodes attached, with mutex protection
 //----------------------------------------------------------------------------
 std::size_t get_solver_state_size()
 {
-    boost::lock_guard<hpx::lcos::local::spinlock> lock(spinsolver::state_mutex);
+    boost::shared_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
     return spinsolver::locality_states.size();
 }
 
@@ -237,8 +236,9 @@ hpx::future<int> init_node(const hpx::id_type locality)
                hpx::launch::sync,
                hpx::util::unwrapped([&](hpx::id_type wrapper, hpx::id_type counter) -> int
         {
-            set_solver_state_data(locality, spinsolver::status::READY, wrapper, counter);
             solver_manager::solver_ptr wrappedSolver = spinsolver::scheduler.getSolver();
+            boost::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
+            set_solver_state_data(locality, spinsolver::status::READY, wrapper, counter);
             wrappedSolver->addSolverId(wrapper);
             return 1;
         }),
@@ -320,46 +320,41 @@ int monitor(double runfor, boost::uint64_t pause)
         std::vector< hpx::future<int> > future_counters;
         std::vector< std::tuple<hpx::id_type, spinsolver::status, counter_value> > final_counters;
 
-        // make a copy of the map so we can iterate safely and not worry about new connections
-        std::map<hpx::id_type, spinsolver::locality_data> locality_states_copy;
-        {
-            boost::lock_guard<hpx::lcos::local::spinlock> lock(spinsolver::state_mutex);
-            locality_states_copy = spinsolver::locality_states;
-        }
-
         //
         // Query the performance counter for each connected locality.
         //
-        final_counters.resize(locality_states_copy.size());
-        //
-        int index = 0;
-        for (auto l : locality_states_copy) {
-            // no need to lock, this is a safe copy
-            spinsolver::status state = l.second.state;
+        {
+            boost::shared_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
+            final_counters.resize(spinsolver::locality_states.size());
             //
-            if (state!=spinsolver::status::READY) {
-                final_counters[index] = std::make_tuple(l.first, state, counter_value(0));
-                if (state==spinsolver::status::CONNECTING) {
-                    set_solver_state(l.first, spinsolver::status::INITIALIZING);
-                    init_node(l.first); // drop the returned future, will not block
-                }
-            }
-            else {
-                if (locality_states_copy[l.first].idle_counter!=hpx::naming::invalid_id) {
-                    hpx::future<int> temp = performance_counter::get_value_async(spinsolver::locality_states[l.first].idle_counter, true).then(
-                        hpx::launch::sync,
-                        [=,&final_counters](hpx::future<counter_value> val) -> hpx::future<int>
-                    {
-                        final_counters[index] = std::make_tuple(l.first, state, val.get());
-                        return hpx::make_ready_future<int>(1);
-                    });
-                    future_counters.push_back(std::move(temp));
+            int index = 0;
+            for (auto l : spinsolver::locality_states) {
+                spinsolver::status state = l.second.state;
+                //
+                if (state!=spinsolver::status::READY) {
+                    final_counters[index] = std::make_tuple(l.first, state, counter_value(0));
+                    if (state==spinsolver::status::CONNECTING) {
+                        set_solver_state(l.first, spinsolver::status::INITIALIZING);
+                        init_node(l.first); // drop the returned future, will not block
+                    }
                 }
                 else {
-                    throw std::runtime_error("Locality READY, but no counter");
+                    if (l.second.idle_counter!=hpx::naming::invalid_id) {
+                        hpx::future<int> temp = performance_counter::get_value_async(l.second.idle_counter, true).then(
+                                hpx::launch::sync,
+                                [=,&final_counters](hpx::future<counter_value> val) -> hpx::future<int>
+                        {
+                            final_counters[index] = std::make_tuple(l.first, state, val.get());
+                            return hpx::make_ready_future<int>(1);
+                        });
+                        future_counters.push_back(std::move(temp));
+                    }
+                    else {
+                        throw std::runtime_error("Locality READY, but no counter");
+                    }
                 }
+                index++;
             }
-            index++;
         }
         //
         when_all(future_counters).then(
@@ -573,8 +568,8 @@ int hpx_main(boost::program_options::variables_map& vm)
     if (rank!=0) {
         // although we should be connected to the console node, we send
         // a status update to signal that we're now ready to be used.
-        // when it receives the state CONNECTING, it will its copy of our state to READY
-        hpx::async(set_solver_state_action(), console, here, spinsolver::status::CONNECTING).get();
+        // when it receives the state CONNECTING, it will update its copy of our state to READY
+        hpx::async(add_solver_state_action(), console, here, spinsolver::status::CONNECTING).get();
         std::cout << "Locality " << here << " Notified console " << std::endl;
 
         // all the slave nodes need to do is wait for work requests to come in
@@ -670,6 +665,7 @@ int hpx_main(boost::program_options::variables_map& vm)
     // get a pointer to the local solver scheduler object that was created on this locality
     //
     solver_manager::solver_ptr wrappedSolver = spinsolver::scheduler.getSolver();
+    SolverIdForRank.clear();
     wrappedSolver->setSolverIds(SolverIdForRank);
 
     // start timer
