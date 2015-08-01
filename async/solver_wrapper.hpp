@@ -3,11 +3,15 @@
 
 #include <hpx/hpx.hpp>
 //
+#include <hpx/lcos/local/mutex.hpp>
+#include <hpx/lcos/local/shared_mutex.hpp>
+//
 #include <vector>
 #include <utility>
 #include <tuple>
 #include <queue>
 #include <cmath>
+#include <map>
 
 //
 // This class represents a single solver type that has been wrapped 
@@ -22,16 +26,16 @@ template <class T>
 struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_solver_class<T>>
 {
     // this is the internal solver we are wrapping
-    T                             _theSolver;
-    double                        _complexity;
-    uint64_t                      _rank;
-    uint64_t                      _nranks;
-    std::size_t                   _os_threads;
-    bool                          _abort;
-    hpx::lcos::local::spinlock    _solver_id_mutex;
-    std::vector<hpx::id_type>     _solver_ids;
-    std::map<hpx::id_type, int>   _solver_counter;
-    std::atomic<bool>             _new_solver;
+    T                               _theSolver;
+    double                          _complexity;
+    uint64_t                        _rank;
+    uint64_t                        _nranks;
+    std::size_t                     _os_threads;
+    bool                            _abort;
+    hpx::lcos::local::shared_mutex  _solver_id_mutex;
+    std::vector<hpx::id_type>       _solver_ids;
+    std::map<hpx::id_type, int>     _solver_counter;
+    std::atomic<bool>               _new_solver;
     //
     // each solve step will return a future, create a queue for them
     // note: the futures are HPX_MOVABLE_BUT_NOT_COPYABLE
@@ -74,7 +78,8 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
 
     // deprecated
     void setSolverIds(const std::vector<hpx::id_type> &ids) {
-        boost::lock_guard<hpx::lcos::local::spinlock> lock(_solver_id_mutex);
+        // unique lock for exclusive write access
+        boost::unique_lock<hpx::lcos::local::shared_mutex> lock(_solver_id_mutex);
         _solver_ids = ids;
         _nranks = _solver_ids.size();
         _new_solver.store(true);
@@ -85,7 +90,8 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
     }
 
     void addSolverId(const hpx::id_type &id) {
-        boost::lock_guard<hpx::lcos::local::spinlock> lock(_solver_id_mutex);
+        // unique lock for exclusive write access
+        boost::unique_lock<hpx::lcos::local::shared_mutex> lock(_solver_id_mutex);
         _solver_ids.push_back(id);
         _nranks = _solver_ids.size();
         _new_solver.store(true);
@@ -128,12 +134,14 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
             //
             // @todo, work on some scheduling to find out what a good N is
             // @todo, traverse list in sorted order so least occupoed nodes get first slot
+
+            // shared lock for read access
             bool enough;
             if (remaining>0) do {
                 enough = true;
+                boost::shared_lock<hpx::lcos::local::shared_mutex> lock(_solver_id_mutex);
                 for (auto s : _solver_ids) {
                     if (_async_results[s].size() < (_os_threads*10)) {
-//                        std::cout << "creating solve_step on " << s << " : remaining " << remaining << std::endl;
                         future_type fut = hpx::async(solve_step, s, args..., seed + local_seed_offset);
                         _async_results[s].push( std::move(fut) );
                         seed ++;
@@ -147,18 +155,21 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
             // if any of the threads have completed, pull them off the queue
             // @todo, if one thread takes much longer, finished jobs will be stuck in the queue
             // so we must only use threads which are from the same solver params for now
-            for (auto s : _solver_ids) {
-                while (!_async_results[s].empty()) {
-                    future_type &fut = _async_results[s].front();
-                    if (fut.is_ready()) {
-                        // the future completed, so put the result on our return vector
-                        repetition_results_vector.push_back(std::move(fut.get()));
-                        // and pop the completed future
-                        _async_results[s].pop();
-                    }
-                    else {
-//                        std::cout << "solve_step not ready : active " << _async_results[s].size() << std::endl;
-                        break;
+            {
+                // shared lock for read access
+                boost::shared_lock<hpx::lcos::local::shared_mutex> lock(_solver_id_mutex);
+                for (auto s : _solver_ids) {
+                    while (!_async_results[s].empty()) {
+                        future_type &fut = _async_results[s].front();
+                        if (fut.is_ready()) {
+                            // the future completed, so put the result on our return vector
+                            repetition_results_vector.push_back(std::move(fut.get()));
+                            // and pop the completed future
+                            _async_results[s].pop();
+                        }
+                        else {
+                            break;
+                        }
                     }
                 }
             }
