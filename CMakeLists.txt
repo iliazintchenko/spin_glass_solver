@@ -30,9 +30,11 @@ SET (CMAKE_ARCHIVE_OUTPUT_DIRECTORY
 )
 
 #--------------------------------------------------
-# CMake include path
-#--------------------------------------------------
+# CMake module path
+#------------------------------------------------------------------------------
+#list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/add_definition.cmake)
 
 #------------------------------------------------------------------------------
 # Detect which machine we are running on to setup defaults for convenience
@@ -77,15 +79,17 @@ endif()
 #--------------------------------------------------
 # Find Boost (should already be found by HPX anyway)
 #--------------------------------------------------
-find_package(Boost 1.56
+find_package(Boost 1.58.0
     COMPONENTS 
-        program_options thread system date_time chrono serialization atomic filesystem 
+        program_options thread system date_time chrono serialization atomic filesystem log log_setup  
     REQUIRED
 )
-if (WIN32)
+#if (WIN32 AND NOT ${Boost_USE_STATIC_LIBS})
   #add_definitions(-DBOOST_PROGRAM_OPTIONS_DYN_LINK)
   add_definitions(-DBOOST_ALL_DYN_LINK)
-endif()
+  add_config_define(BOOST_LOG_DYN_LINK)
+#endif()
+
 
 #--------------------------------------------------
 # Find HPX
