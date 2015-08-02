@@ -32,6 +32,8 @@
 #include "solver_manager.hpp"
 //
 #include "CommandCapture.h"
+#define RDMAHELPER_DISABLE_LOGGING 1
+#include "RdmaLogging.h"
 //
 //----------------------------------------------------------------------------
 // example command line
@@ -107,9 +109,9 @@ namespace spinsolver {
     hpx::lcos::local::shared_mutex          state_mutex;
     std::map<hpx::id_type, locality_data>   locality_states;
     //
-    std::string                     partition;
-    std::string                     account;
-    std::string                     reservation;
+    std::string                             partition;
+    std::string                             account;
+    std::string                             reservation;
     //
     boost::shared_ptr<hamiltonian_type> hamiltonian;
     // on each node, we have one solver_manager instance
@@ -154,18 +156,21 @@ int set_solver_state(const hpx::id_type &locality, spinsolver::status state)
        (*it).second.state = state;
     }
     else {
-        std::cout << "Adding a state for locality " << locality << std::endl;
+        LOG_DEBUG_MSG("adding locality " << locality << " " << state);
         spinsolver::locality_states[locality] =
                 {state, hpx::naming::invalid_id, hpx::naming::invalid_id};
     }
+    LOG_DEBUG_MSG("set_solver_state " << locality << " " << state);
     return 1;
 }
 
 int add_solver_state(const hpx::id_type &locality, spinsolver::status state)
 {
-    std::cout << "Action received from locality " << locality << std::endl;
+    LOG_DEBUG_MSG("action received from locality " << locality);
     boost::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
-    return set_solver_state(locality, state);
+set_solver_state(locality, state);
+    LOG_DEBUG_MSG("releasing state_mutex add_solver_state" << locality);
+    return 1;
 }
 
 //----------------------------------------------------------------------------
@@ -181,6 +186,7 @@ int set_solver_state_data(const hpx::id_type &locality,
     else {
         spinsolver::locality_states[locality] = {state, wrapper, idle};
     }
+    LOG_DEBUG_MSG("set_solver_state_data " << locality << " " << state);
     return 1;
 }
 
@@ -217,6 +223,7 @@ std::size_t get_solver_state_size()
 //----------------------------------------------------------------------------
 hpx::future<int> init_node(const hpx::id_type locality)
 {
+    LOG_DEBUG_MSG("entering init_node for locality " << locality);
     // std::cout << "init_node for " << locality << std::endl;
     // trigger the initialize_solver action so that the locality is initialized
     // and ready to receive work. For now we pass the Hamiltonian as a parameter, but
@@ -231,15 +238,18 @@ hpx::future<int> init_node(const hpx::id_type locality)
         hpx::future<hpx::id_type> wrapper = hpx::agas::resolve_name("/solver_wrapper/" +
                 boost::lexical_cast<std::string>(hpx::naming::get_locality_id_from_id(locality)));
         hpx::future<hpx::id_type> counter = get_counter(counter_template, locality);
+        LOG_DEBUG_MSG("requested wrapper and counter from locality " << locality);
         //
         return hpx::lcos::local::dataflow(
                hpx::launch::sync,
                hpx::util::unwrapped([&](hpx::id_type wrapper, hpx::id_type counter) -> int
         {
             solver_manager::solver_ptr wrappedSolver = spinsolver::scheduler.getSolver();
+            LOG_DEBUG_MSG("changing solver state data for locality " << locality);
             boost::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
             set_solver_state_data(locality, spinsolver::status::READY, wrapper, counter);
             wrappedSolver->addSolverId(wrapper);
+            LOG_DEBUG_MSG("releasing state_mutex (init_node)" << locality);
             return 1;
         }),
         wrapper, counter);
@@ -324,18 +334,20 @@ int monitor(double runfor, boost::uint64_t pause)
         // Query the performance counter for each connected locality.
         //
         {
+            LOG_DEBUG_MSG("Before looping over localities to get performance counters ");
             boost::shared_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
             final_counters.resize(spinsolver::locality_states.size());
             //
             int index = 0;
             for (auto l : spinsolver::locality_states) {
                 spinsolver::status state = l.second.state;
+                LOG_DEBUG_MSG("fetching info from locality " << l.first);
                 //
                 if (state!=spinsolver::status::READY) {
                     final_counters[index] = std::make_tuple(l.first, state, counter_value(0));
                     if (state==spinsolver::status::CONNECTING) {
                         set_solver_state(l.first, spinsolver::status::INITIALIZING);
-                        init_node(l.first); // drop the returned future, will not block
+                        hpx::apply(&init_node, l.first);
                     }
                 }
                 else {
@@ -355,6 +367,7 @@ int monitor(double runfor, boost::uint64_t pause)
                 }
                 index++;
             }
+            LOG_DEBUG_MSG("releasing state_mutex perf counter loop");
         }
         //
         when_all(future_counters).then(
