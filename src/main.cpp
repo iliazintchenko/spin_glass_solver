@@ -33,7 +33,7 @@
 #include "solver_manager.hpp"
 //
 #include "CommandCapture.h"
-//#define RDMAHELPER_DISABLE_LOGGING 1
+#define RDMAHELPER_DISABLE_LOGGING 1
 #include "RdmaLogging.h"
 //
 //----------------------------------------------------------------------------
