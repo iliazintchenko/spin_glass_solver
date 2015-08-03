@@ -177,7 +177,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
         bool futures_waiting = false;
         //
         // Measure time for solves/s
-        boost::uint64_t t_start = hpx::util::high_resolution_clock::now();
+        boost::uint64_t t_start = std::chrono::system_clock::now();
         int reps_this_loop = 0;
         //
         while (!_abort && (futures_waiting || remaining>0)) {
@@ -206,7 +206,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
                 LOG_DEBUG_MSG("releasing sover_id_mutex in spawn loop");
             } while (!enough && remaining>0);
             //
-            boost::uint64_t now = hpx::util::high_resolution_clock::now();
+            boost::uint64_t now = std::chrono::system_clock::now();
             std::chrono::duration<double> elapsed_seconds = now - t_start
             t_start = now;
 
