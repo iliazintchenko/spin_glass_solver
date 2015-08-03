@@ -166,7 +166,7 @@ int set_solver_state(const hpx::id_type &locality, spinsolver::status state)
 
 int add_solver_state(const hpx::id_type &locality, spinsolver::status state)
 {
-    LOG_DEBUG_MSG("action received from locality " << locality);
+    LOG_DEBUG_MSG("taking state_mutex : action received from locality " << locality);
     boost::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
 set_solver_state(locality, state);
     LOG_DEBUG_MSG("releasing state_mutex add_solver_state" << locality);
@@ -198,6 +198,7 @@ HPX_PLAIN_ACTION(add_solver_state, add_solver_state_action);
 // populed by the nodes calling set_solver_state()
 // two versions, one locks mutex, the other does not
 //----------------------------------------------------------------------------
+/*
 const spinsolver::status get_solver_state(hpx::id_type locality)
 {
     boost::shared_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
@@ -217,6 +218,7 @@ std::size_t get_solver_state_size()
     boost::shared_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
     return spinsolver::locality_states.size();
 }
+*/
 
 //----------------------------------------------------------------------------
 // Initialize the solver on a remote node
@@ -245,7 +247,7 @@ hpx::future<int> init_node(const hpx::id_type locality)
                hpx::util::unwrapped([&](hpx::id_type wrapper, hpx::id_type counter) -> int
         {
             solver_manager::solver_ptr wrappedSolver = spinsolver::scheduler.getSolver();
-            LOG_DEBUG_MSG("changing solver state data for locality " << locality);
+            LOG_DEBUG_MSG("taking state_mutex : changing solver state data for locality " << locality);
             boost::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
             set_solver_state_data(locality, spinsolver::status::READY, wrapper, counter);
             wrappedSolver->addSolverId(wrapper);

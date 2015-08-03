@@ -207,12 +207,12 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
             } while (!enough && remaining>0);
             //
             boost::uint64_t now = hpx::util::high_resolution_clock::now();
-            double elapsed = 1.0E-9 * (now - t_start);
+            std::chrono::duration<double> elapsed_seconds = now - t_start
             t_start = now;
 
             int _total_remaining = num_reps - _total_completed;
             double solves_this_iteration = (last_remaining - _total_remaining);
-            double solves_per_second = (solves_this_iteration)/elapsed;
+            double solves_per_second = (solves_this_iteration)/elapsed_seconds;
             last_remaining = _total_remaining;
 //            std::cout << "Solves this iteration " << solves_this_iteration << std::endl;
 //            std::cout << "Time this iteration " << elapsed << std::endl;
