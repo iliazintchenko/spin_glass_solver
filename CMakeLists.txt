@@ -79,16 +79,17 @@ endif()
 #--------------------------------------------------
 # Find Boost (should already be found by HPX anyway)
 #--------------------------------------------------
-find_package(Boost 1.58.0
+find_package(Boost 1.54.0
     COMPONENTS 
         program_options thread system date_time chrono serialization atomic filesystem log log_setup  
     REQUIRED
 )
-#if (WIN32 AND NOT ${Boost_USE_STATIC_LIBS})
+if (WIN32 AND NOT ${Boost_USE_STATIC_LIBS})
   #add_definitions(-DBOOST_PROGRAM_OPTIONS_DYN_LINK)
-  add_definitions(-DBOOST_ALL_DYN_LINK)
-  add_config_define(BOOST_LOG_DYN_LINK)
-#endif()
+#  add_definitions(-DBOOST_ALL_DYN_LINK)
+#  add_config_define(BOOST_LOG_DYN_LINK)
+#  add_config_define(BOOST_ALL_DYN_LINK)
+endif()
 
 
 #--------------------------------------------------

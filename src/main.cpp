@@ -32,7 +32,7 @@
 #include "solver_manager.hpp"
 //
 #include "CommandCapture.h"
-#define RDMAHELPER_DISABLE_LOGGING 1
+//#define RDMAHELPER_DISABLE_LOGGING 1
 #include "RdmaLogging.h"
 //
 //----------------------------------------------------------------------------
@@ -372,10 +372,12 @@ int monitor(double runfor, boost::uint64_t pause)
             LOG_DEBUG_MSG("releasing state_mutex perf counter loop");
         }
         //
+        LOG_DEBUG_MSG("before when_all (future_counter)");
         when_all(future_counters).then(
                 hpx::launch::sync,
                 [&](hpx::future<std::vector< hpx::future<int>>> f)
                 {
+                LOG_DEBUG_MSG("after when_all (future_counter)");
                 for (auto c : final_counters) {
                     hpx::id_type    &locality = std::get<0>(c);
                     spinsolver::status &state = std::get<1>(c);

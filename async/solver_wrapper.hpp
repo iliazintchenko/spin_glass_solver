@@ -13,7 +13,7 @@
 #include <cmath>
 #include <map>
 
-#define RDMAHELPER_DISABLE_LOGGING 1
+//#define RDMAHELPER_DISABLE_LOGGING 1
 #include "RdmaLogging.h"
 //
 // This class represents a single solver type that has been wrapped 
@@ -177,7 +177,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
         bool futures_waiting = false;
         //
         // Measure time for solves/s
-        boost::uint64_t t_start = std::chrono::system_clock::now();
+        std::chrono::time_point<std::chrono::system_clock> t_start = std::chrono::system_clock::now();
         int reps_this_loop = 0;
         //
         while (!_abort && (futures_waiting || remaining>0)) {
@@ -194,7 +194,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
                 LOG_DEBUG_MSG("taking sover_id_mutex in spawn loop");
                 boost::shared_lock<solver_mutex_type> lock(_solver_id_mutex);
                 for (auto s : _solver_ids) {
-                    if (_async_results[s].size() < (_os_threads*50)) {
+                    if (_async_results[s].size() < (_os_threads*5)) {
                         future_type fut = hpx::async(solve_step, s, args..., seed + local_seed_offset);
                         _async_results[s].push( std::move(fut) );
                         seed ++;
@@ -206,13 +206,13 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
                 LOG_DEBUG_MSG("releasing sover_id_mutex in spawn loop");
             } while (!enough && remaining>0);
             //
-            boost::uint64_t now = std::chrono::system_clock::now();
-            std::chrono::duration<double> elapsed_seconds = now - t_start
+            std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
+            std::chrono::duration<double> elapsed_seconds = now - t_start;
             t_start = now;
 
             int _total_remaining = num_reps - _total_completed;
             double solves_this_iteration = (last_remaining - _total_remaining);
-            double solves_per_second = (solves_this_iteration)/elapsed_seconds;
+            double solves_per_second = (solves_this_iteration)/elapsed_seconds.count();
             last_remaining = _total_remaining;
 //            std::cout << "Solves this iteration " << solves_this_iteration << std::endl;
 //            std::cout << "Time this iteration " << elapsed << std::endl;
