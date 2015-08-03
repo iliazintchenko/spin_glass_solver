@@ -84,11 +84,11 @@ find_package(Boost 1.54.0
         program_options thread system date_time chrono serialization atomic filesystem log log_setup  
     REQUIRED
 )
-if (WIN32 AND NOT ${Boost_USE_STATIC_LIBS})
+if (NOT Boost_USE_STATIC_LIBS)
   #add_definitions(-DBOOST_PROGRAM_OPTIONS_DYN_LINK)
 #  add_definitions(-DBOOST_ALL_DYN_LINK)
-#  add_config_define(BOOST_LOG_DYN_LINK)
-#  add_config_define(BOOST_ALL_DYN_LINK)
+  add_config_define(BOOST_LOG_DYN_LINK)
+  add_config_define(BOOST_ALL_DYN_LINK)
 endif()
 
 
@@ -109,6 +109,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/kwsys)
 #--------------------------------------------------
 include_directories(src)
 include_directories(async)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 #--------------------------------------------------
 # compile definitions 
@@ -160,6 +161,24 @@ target_link_libraries(solver_reference
     iostreams_component 
     ${Boost_LIBRARIES}
 )
+
+################################################################################
+# Configure the header that includes all compile definitions
+################################################################################
+get_property(PROJECT_CONFIG_DEFINITIONS_VAR GLOBAL PROPERTY PROJECT_CONFIG_DEFINITIONS)
+
+list(SORT PROJECT_CONFIG_DEFINITIONS_VAR)
+list(REMOVE_DUPLICATES PROJECT_CONFIG_DEFINITIONS_VAR)
+message("Config defines are ${PROJECT_CONFIG_DEFINITIONS_VAR}")
+
+set(project_config_defines "\n")
+foreach(def ${PROJECT_CONFIG_DEFINITIONS_VAR})
+  set(project_config_defines "${project_config_defines}#define ${def} ${${def}_define}\n")#"
+endforeach()
+
+configure_file("${PROJECT_SOURCE_DIR}/cmake/config_defines.hpp.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_defines.h"
+               @ONLY)
 
 #--------------------------------------------------
 # Generate benchmarking scripts

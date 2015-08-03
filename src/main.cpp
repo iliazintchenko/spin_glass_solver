@@ -23,6 +23,7 @@
 #include <map>
 
 // Solver related includes
+#include "spin_glass_solver_defines.h"
 #include "hamiltonian.hpp"
 #include "result.hpp"
 #include "sa_solver.hpp"

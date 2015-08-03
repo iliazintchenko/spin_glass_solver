@@ -1,0 +1,6 @@
+#if !defined(@PROJECT_NAME@_CONFIG_DEFINES_HPP)
+#define @PROJECT_NAME@_CONFIG_DEFINES_HPP
+
+@project_config_defines@
+
+#endif
