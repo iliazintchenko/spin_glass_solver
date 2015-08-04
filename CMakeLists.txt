@@ -117,25 +117,34 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 add_definitions(-DSPINSOLVE_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\")
 add_definitions(-DSPINSOLVE_BINARY_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\")
 add_definitions(-DKWSYS_NAMESPACE=kwsys)
+if (WIN32)
+  hpx_add_compile_flag(-bigobj)
+  add_definitions(-DKWSYS_ENCODING_DEFAULT_CODEPAGE=CP_UTF8)
+endif()
 if (BGAS)
   add_definitions(-DSPINSOLVE_SCRIPT_NAME=\"add_nodes-bgas.sh\")
 elseif (MONCH)
   add_definitions(-DSPINSOLVE_SCRIPT_NAME=\"add_nodes-monch.sh\")
+else ()
+  add_definitions(-DSPINSOLVE_SCRIPT_NAME=\"undefined\")
 endif()
 #--------------------------------------------------
 # Library
 #--------------------------------------------------
+if (WIN32)
+  set(kwsys_process src/kwsys/ProcessWin32.c)
+else()
+  set(kwsys_process src/kwsys/ProcessUNIX.c)
+endif()
+
 add_library(solver STATIC 
   src/result.cpp 
   src/hamiltonian.cpp 
   src/sa_solver.cpp
   src/CommandCapture.cpp
-  src/kwsys/ProcessUNIX.c
   src/kwsys/System.c
+  ${kwsys_process}
 )
-if (WIN32)
- # add src/kwsys/ProcessUNIX.c
-endif()
 
 #--------------------------------------------------
 # Exe

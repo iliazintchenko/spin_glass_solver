@@ -498,6 +498,7 @@ int add_nodes_slurm(int N, int hours, int mins,
 //----------------------------------------------------------------------------
 bool inputAvailable()
 {
+#ifndef WIN32
   struct timeval tv;
   fd_set fds;
   tv.tv_sec = 0;
@@ -506,6 +507,9 @@ bool inputAvailable()
   FD_SET(STDIN_FILENO, &fds);
   select(STDIN_FILENO+1, &fds, NULL, NULL, &tv);
   return (FD_ISSET(0, &fds));
+#else
+  return 0;
+#endif
 }
 
 //----------------------------------------------------------------------------

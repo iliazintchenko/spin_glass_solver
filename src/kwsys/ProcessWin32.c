@@ -10,9 +10,9 @@
   See the License for more information.
 ============================================================================*/
 #include "kwsysPrivate.h"
-#include KWSYS_HEADER(Process.h)
-#include KWSYS_HEADER(System.h)
-#include KWSYS_HEADER(Encoding.h)
+#include "kwsys/kwsys_Process.h""
+#include "System.h"
+//#include KWSYS_HEADER(Encoding.h)
 
 /* Work-around CMake dependency scanning limitation.  This must
    duplicate the above list of headers.  */
@@ -87,6 +87,38 @@ a UNIX-style select system call.
 #else
 # define KWSYSPE_DEBUG(x) (void)1
 #endif
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+size_t kwsysEncoding_mbstowcs(wchar_t* dest, const char* str, size_t n)
+{
+  if (str == 0)
+  {
+    return (size_t)-1;
+  }
+#ifdef _WIN32
+  return MultiByteToWideChar(KWSYS_ENCODING_DEFAULT_CODEPAGE, 0,
+    str, -1, dest, (int)n) - 1;
+#else
+  return mbstowcs(dest, str, n);
+#endif
+}
+
+wchar_t* kwsysEncoding_DupToWide(const char* str)
+{
+  wchar_t* ret = NULL;
+  size_t length = kwsysEncoding_mbstowcs(NULL, str, 0) + 1;
+  if (length > 0)
+  {
+    ret = (wchar_t*)malloc((length)*sizeof(wchar_t));
+    ret[0] = 0;
+    kwsysEncoding_mbstowcs(ret, str, length);
+  }
+  return ret;
+}
+
 
 typedef LARGE_INTEGER kwsysProcessTime;
 

@@ -31,7 +31,7 @@ size_t kwsysEncoding_mbstowcs(wchar_t* dest, const char* str, size_t n)
     return (size_t)-1;
     }
 #ifdef _WIN32
-  return MultiByteToWideChar(KWSYS_ENCODING_DEFAULT_CODEPAGE, 0,
+  return MultiByteToWideChar(o, 0,
                              str, -1, dest, (int)n) - 1;
 #else
   return mbstowcs(dest, str, n);
