@@ -33,9 +33,19 @@
 #include "solver_manager.hpp"
 //
 #include "CommandCapture.h"
-#define RDMAHELPER_DISABLE_LOGGING 1
+//#define RDMAHELPER_DISABLE_LOGGING 1
+#undef RDMAHELPER_DISABLE_LOGGING
 #include "RdmaLogging.h"
 //
+
+#include "scheduler.hpp"
+
+template class static_queue_scheduler<
+    boost::mutex,
+    hpx::threads::policies::lockfree_fifo,
+    hpx::threads::policies::lockfree_fifo,
+    hpx::threads::policies::lockfree_lifo>;
+
 //----------------------------------------------------------------------------
 // example command line
 //----------------------------------------------------------------------------
@@ -96,6 +106,8 @@ namespace spinsolver {
         status          state;
         hpx::id_type    solver_wrapper;
         hpx::id_type    idle_counter;
+        std::size_t     num_worker_threads;
+        double          last_idle_rate;
     };
     //
     hpx::id_type                            here;
@@ -175,17 +187,14 @@ set_solver_state(locality, state);
 }
 
 //----------------------------------------------------------------------------
-int set_solver_state_data(const hpx::id_type &locality,
-        spinsolver::status state,
-        hpx::id_type wrapper,
-        hpx::id_type idle)
+int set_solver_state_data(const hpx::id_type &locality, spinsolver::locality_data data)
 {
     auto it = spinsolver::locality_states.find(locality);
     if (it!=spinsolver::locality_states.end()) {
-        (*it).second = {state, wrapper, idle};
+        (*it).second = data;
     }
     else {
-        spinsolver::locality_states[locality] = {state, wrapper, idle};
+        spinsolver::locality_states[locality] = data;
     }
     LOG_DEBUG_MSG("set_solver_state_data " << locality << " " << state);
     return 1;
@@ -193,6 +202,7 @@ int set_solver_state_data(const hpx::id_type &locality,
 
 // Define the boilerplate code necessary for action invocation
 HPX_PLAIN_ACTION(add_solver_state, add_solver_state_action);
+HPX_PLAIN_ACTION(set_solver_state_data, set_solver_state_action);
 
 //----------------------------------------------------------------------------
 // Fetch last reported state from the local map of localities which is
@@ -250,7 +260,7 @@ hpx::future<int> init_node(const hpx::id_type locality)
             solver_manager::solver_ptr wrappedSolver = spinsolver::scheduler.getSolver();
             LOG_DEBUG_MSG("taking state_mutex : changing solver state data for locality " << locality);
             boost::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
-            set_solver_state_data(locality, spinsolver::status::READY, wrapper, counter);
+            set_solver_state_data(locality, {spinsolver::status::READY, wrapper, counter, spinsolver::os_threads, 0.0});
             wrappedSolver->addSolverId(wrapper);
             LOG_DEBUG_MSG("releasing state_mutex (init_node)" << locality);
             return 1;
@@ -530,7 +540,7 @@ int poll_stdin()
                         }
                     }
                 }
-                else if (cmd[0] == "add") {
+                else if (cmd[0] == "add" || cmd[0] == "a") {
                     if (cmd.size() == 2) {
                         int N = boost::lexical_cast<int>(cmd[1]);
                         if (N>0) {
@@ -543,9 +553,9 @@ int poll_stdin()
                     // not yet implemented
                 }
                 else if (cmd[0] == "help") {
-                    std::cout << "commands are add <n>, query, reset, quit " << std::endl;
+                    std::cout << "commands are add(a) <n>, query, reset, quit(q) " << std::endl;
                 }
-                else if (cmd[0] == "quit") {
+                else if (cmd[0] == "quit" || cmd[0] == "q") {
                     spinsolver::scheduler.abort();
                     abort = true;
                     break;
@@ -642,11 +652,21 @@ int hpx_main(boost::program_options::variables_map& vm)
     // until a free work queue is available.
     // @TODO This will be moved into a custom scheduler once it is ready.
     hpx::error_code ec(hpx::lightweight);
-    hpx::applier::register_thread_nullary(
+//    hpx::applier::register_thread_nullary(
+//            hpx::util::bind(&monitor, -1, 1000),
+//            "monitor",
+//            hpx::threads::pending, true, hpx::threads::thread_priority_critical,
+//            -1, hpx::threads::thread_stacksize_default, ec);
+
+    //
+    LOG_DEBUG_MSG("About to instantiate custom scheduler");
+    custom_scheduler my_scheduler;
+    my_scheduler.register_thread_nullary(
             hpx::util::bind(&monitor, -1, 1000),
             "monitor",
             hpx::threads::pending, true, hpx::threads::thread_priority_critical,
             -1, hpx::threads::thread_stacksize_default, ec);
+    std::cout << "created custom schedluer"<<std::endl;
 
     //
     // create a fire and forget poll stdin thread for input commands
