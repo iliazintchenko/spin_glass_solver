@@ -10,7 +10,7 @@
   See the License for more information.
 ============================================================================*/
 #include "kwsysPrivate.h"
-#include KWSYS_HEADER(Process.h)
+#include KWSYS_HEADER(kwsys_Process.h)
 #include KWSYS_HEADER(System.h)
 
 /* Work-around CMake dependency scanning limitation.  This must

@@ -1,7 +1,7 @@
 //
 // kwsys
 //
-#include <kwsys/Process.h>
+#include <kwsys/kwsys_Process.h>
 //
 // STL
 //
