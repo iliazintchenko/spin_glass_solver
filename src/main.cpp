@@ -279,6 +279,22 @@ void test_shell_command(const std::string &name, int rank)
     }
 }
 
+int get_ip() {
+    std::vector<const char*> command_list;
+    command_list.push_back("ip");
+    command_list.push_back("route");
+    command_list.push_back("get");
+    command_list.push_back("8.8.8.8");
+//    command_list.push_back("|");
+//    command_list.push_back("awk");
+//    command_list.push_back("NR==1 {print $NF}");
+    std::vector<std::string> result = ExecuteAndCapture(command_list, 30.0, true);
+    for (auto & str_return : result) {
+        std::cout << "ip addr : ";
+        std::cout << str_return.c_str() << std::endl;
+    }
+    return 0;
+}
 //----------------------------------------------------------------------------
 // A monitoring thread which queries the amount of work on a locality
 // Experimental for future use.
@@ -582,6 +598,7 @@ int hpx_main(boost::program_options::variables_map& vm)
     std::cout <<"Locality " << name.c_str() << " Rank " << rank << " Using port number " << port << " and agas " << agas << std::endl;
 
     //test_shell_command(name, rank);
+    get_ip();
 
     if (rank!=0) {
         // although we should be connected to the console node, we send
