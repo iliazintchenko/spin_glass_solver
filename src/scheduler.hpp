@@ -39,7 +39,7 @@ public:
         pool_(scheduler_, notifier_, "custom-pool")
     {
         LOG_DEBUG_MSG("Creating custom scheduler");
-        std::cout << "Creating custom scheduler\n";
+        std::cout << "Creating custom scheduler" << std::endl;;
     }
 
     static inline threads::thread_state_enum thread_function_nullary(
@@ -65,16 +65,6 @@ public:
     {
         std::cout << "Here 1 in register_thread_nullary" << std::endl;
         LOG_DEBUG_MSG("Here 1 in register_thread_nullary");
-
-        hpx::applier::applier* app = hpx::applier::get_applier_ptr();
-        if (NULL == app)
-        {
-            HPX_THROWS_IF(ec, invalid_status,
-                    "hpx::applier::register_thread_nullary",
-                    "global applier object is not accessible");
-            return threads::invalid_thread_id;
-        }
-
         std::cout << "Here 2 in register_thread_nullary" << std::endl;
         LOG_DEBUG_MSG("Here 2 in register_thread_nullary");
 
@@ -87,12 +77,12 @@ public:
         LOG_DEBUG_MSG("Here 3 in register_thread_nullary");
 
         hpx::threads::thread_id_type id = threads::invalid_thread_id;
-        hpx::threads::detail::create_work(&scheduler_, data, initial_state, ec);
+//        hpx::threads::detail::create_work(&scheduler_, data, initial_state, ec);
 
-        std::cout << "Here 4 in register_thread_nullary" << std::endl;
+        std::cout << "Here 4 in register_thread_nullary using os thread num " << data.num_os_thread << std::endl;
         LOG_DEBUG_MSG("Here 4 in register_thread_nullary");
 
-        //        policy_.create_thread(data, id, initial_state,  run_now, ec, data.num_os_thread);
+        scheduler_.create_thread(data, 0, initial_state, run_now, ec, data.num_os_thread);
 
         std::cout << "created a thread and got id " << id << std::endl;
         return id;

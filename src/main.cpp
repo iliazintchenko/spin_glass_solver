@@ -301,6 +301,12 @@ void stop_monitor(hpx::promise<void> p)
     p.set_value();
 }
 
+int demo(int x)
+{
+    std::cout << "Demo function " << x << std::endl;
+    return 1;
+}
+
 //----------------------------------------------------------------------------
 // loops until terminated : Broken, does not terminate
 // gets the counter from all localities currently connected and ready
@@ -658,20 +664,24 @@ int hpx_main(boost::program_options::variables_map& vm)
     // until a free work queue is available.
     // @TODO This will be moved into a custom scheduler once it is ready.
     hpx::error_code ec(hpx::lightweight);
-//    hpx::applier::register_thread_nullary(
-//            hpx::util::bind(&monitor, -1, 1000),
-//            "monitor",
-//            hpx::threads::pending, true, hpx::threads::thread_priority_critical,
-//            -1, hpx::threads::thread_stacksize_default, ec);
-
-    //
-    LOG_DEBUG_MSG("About to instantiate custom scheduler");
-    custom_scheduler my_scheduler;
-    my_scheduler.register_thread_nullary(
+    hpx::applier::register_thread_nullary(
             hpx::util::bind(&monitor, -1, 1000),
             "monitor",
             hpx::threads::pending, true, hpx::threads::thread_priority_critical,
             -1, hpx::threads::thread_stacksize_default, ec);
+
+    //
+    LOG_DEBUG_MSG("About to instantiate custom scheduler");
+    std::cout << "About to create custom schedluer"<<std::endl;
+    custom_scheduler my_scheduler;
+    std::cout << "About to create custom schedluer"<<std::endl;
+
+    my_scheduler.register_thread_nullary(
+            hpx::util::bind(&demo, 42),
+            "demo",
+            hpx::threads::pending, true, hpx::threads::thread_priority_critical,
+            -1, hpx::threads::thread_stacksize_default, ec);
+
     std::cout << "created custom schedluer"<<std::endl;
 
     //
