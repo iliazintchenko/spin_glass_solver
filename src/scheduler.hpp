@@ -11,8 +11,8 @@
 //
 #include <hpx/runtime/threads/policies/static_queue_scheduler.hpp>
 //
-#undef RDMAHELPER_DISABLE_LOGGING
-#include "RdmaLogging.h"
+//#undef RDMAHELPER_DISABLE_LOGGING
+//#include "RdmaLogging.h"
 //
 using namespace hpx;
 using namespace hpx::threads::policies;
@@ -47,7 +47,7 @@ public:
         scheduler_(init_param_, false), // false = not deferred initialization
         pool_(scheduler_, notifier_, "custom-pool")
     {
-        LOG_DEBUG_MSG("Creating custom scheduler");
+//        LOG_DEBUG_MSG("Creating custom scheduler");
         std::cout << "Creating custom scheduler" << std::endl;;
     }
 
@@ -65,6 +65,13 @@ public:
         return threads::terminated;
     }
 
+    void init() {
+      boost::unique_lock<mutex_type> lk(mtx_);
+
+      init_affinity_data affinity_data;
+      pool_.init(1, affinity_data);
+      pool_.run(lk, 1);
+    }
 
     hpx::threads::thread_id_type register_thread_nullary(
         util::unique_function_nonser<void()> && func, char const* desc,
@@ -85,20 +92,13 @@ public:
 //        std::cout << "Here 4 in register_thread_nullary using os thread num " << data.num_os_thread << std::endl;
 //        LOG_DEBUG_MSG("Here 4 in register_thread_nullary");
 
-        int state = pool_.get_state();
-
-        boost::unique_lock<mutex_type> lk(mtx_);
-
-        init_affinity_data affinity_data;
-        pool_.init(1, affinity_data);
-        pool_.run(lk, 1);
 
         hpx::threads::thread_id_type id = threads::invalid_thread_id;
         //        hpx::threads::detail::create_work(&scheduler_, data, initial_state, ec);
 
         scheduler_.create_thread(data, 0, initial_state, run_now, ec, data.num_os_thread);
 
-        std::cout << "created a thread and got id " << id << std::endl;
+//        std::cout << "created a thread and got id " << id << std::endl;
         return id;
     }
 
