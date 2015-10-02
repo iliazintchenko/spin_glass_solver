@@ -13,7 +13,7 @@
 #include <hpx/runtime/threads/detail/create_work.hpp>
 #include <hpx/runtime/threads/policies/callback_notifier.hpp>
 #include <hpx/runtime/threads/policies/static_queue_scheduler.hpp>
-#include <hpx/runtime/threads/detail/scheduling_loop.hpp>
+#include <hpx/runtime/threads/executors/default_executor.hpp>
 //
 // Boost includes
 #include <boost/program_options.hpp>
@@ -27,6 +27,8 @@
 #include <chrono>
 #include <vector>
 #include <map>
+#include <algorithm>
+#include <thread>
 
 //
 //#undef RDMAHELPER_DISABLE_LOGGING
@@ -37,18 +39,18 @@ using namespace hpx::threads::policies;
 //
 typedef static_queue_scheduler<> scheduling_policy_type;
 //
- //template<>
- //void hpx::threads::detail::scheduling_loop<scheduling_policy_type>(
- //  std::size_t num_thread, scheduling_policy_type& scheduler,
- //  boost::atomic<hpx::state>& global_state, scheduling_counters& counters,
- //  util::function_nonser<void()> const& cb_outer,
- //  util::function_nonser<void()> const& cb_inner)
- //{
- //  util::itt::stack_context ctx;        // helper for itt support
- //  util::itt::domain domain(get_thread_name().data());
- //  //         util::itt::id threadid(domain, this);
- //  util::itt::frame_context fctx(domain);
- //}
+//template<>
+//void hpx::threads::detail::scheduling_loop<scheduling_policy_type>(
+//  std::size_t num_thread, scheduling_policy_type& scheduler,
+//  boost::atomic<hpx::state>& global_state, scheduling_counters& counters,
+//  util::function_nonser<void()> const& cb_outer,
+//  util::function_nonser<void()> const& cb_inner)
+//{
+//  util::itt::stack_context ctx;        // helper for itt support
+//  util::itt::domain domain(get_thread_name().data());
+//  //         util::itt::id threadid(domain, this);
+//  util::itt::frame_context fctx(domain);
+//}
 
 
 //----------------------------------------------------------------------------
@@ -122,6 +124,12 @@ public:
     pool_.run(lk, 1);
   }
 
+  void stop()
+  {
+    boost::unique_lock<mutex_type> lk(mtx_);
+    pool_.stop(lk, true);
+  }
+
   hpx::threads::thread_id_type register_thread_nullary(
     util::unique_function_nonser<void()> && func, char const* desc,
     threads::thread_state_enum initial_state, bool run_now,
@@ -132,6 +140,7 @@ public:
     //        LOG_DEBUG_MSG("Here 1 in register_thread_nullary");
     //        std::cout << "Here 2 in register_thread_nullary" << std::endl;
     //        LOG_DEBUG_MSG("Here 2 in register_thread_nullary");
+
 
     hpx::threads::thread_init_data data(
       util::bind(util::one_shot(&thread_function_nullary), std::move(func)),
@@ -145,7 +154,7 @@ public:
     hpx::threads::thread_id_type id = threads::invalid_thread_id;
     //        hpx::threads::detail::create_work(&scheduler_, data, initial_state, ec);
 
-    scheduler_.create_thread(data, 0, initial_state, run_now, ec, data.num_os_thread);
+    hpx::threads::detail::create_thread(&scheduler_, data, id, initial_state, run_now, ec);
 
     //        std::cout << "created a thread and got id " << id << std::endl;
     return id;
@@ -157,13 +166,13 @@ public:
 
 
 //----------------------------------------------------------------------------
-int demo(int runfor, int pause)
+int demo(double runfor, int pause)
 {
   // timing
   boost::int64_t zero_time = 0;
   hpx::util::high_resolution_timer t;
 
-  while (runfor<0 || t.elapsed()<runfor)
+  if (runfor<0 || t.elapsed()<runfor)
   {
     // try to detect when hpx is shutting down
     hpx::state run_state;
@@ -173,15 +182,24 @@ int demo(int runfor, int pause)
       run_state = hpx::state_running;
     }
     else run_state = (rt->get_thread_manager().status());
-    std::cout << "demo : hpx runtime state is " << (int)run_state << std::endl;
+    std::cout << "custom : std :" << std::this_thread::get_id() << " hpx :" << hpx::this_thread::get_id() << " runtime state is " << (int)run_state << std::endl;
 
     // stop collecting data when the runtime is exiting
     // @TODO find out why quit does not work.
-    bool closing = hpx::threads::threadmanager_is(hpx::state_pre_shutdown);
-    if (closing) return 0;
+
+    hpx::threads::executors::generic_thread_pool_executor exec(
+        hpx::this_thread::get_executor());
+
+    if (exec.get_state() == hpx::state_running)
+    {
+        exec.add_after(
+            boost::chrono::milliseconds(pause),
+            hpx::util::bind(&demo, (std::max)(runfor-t.elapsed(), 0.0), pause),
+            "demo");
+    }
 
     // Schedule a suspend/wakeup after each check
-    hpx::this_thread::suspend(pause);
+    // hpx::this_thread::suspend(pause);
   }
   // exit when thread is terminated or shutting down
   return 0;
@@ -196,7 +214,7 @@ int monitor(double runfor, boost::uint64_t pause)
   boost::int64_t zero_time = 0;
   hpx::util::high_resolution_timer t;
 
-  while (runfor<0 || t.elapsed()<runfor)
+  if (runfor<0 || t.elapsed()<runfor)
   {
     // try to detect when hpx is shutting down
     hpx::state run_state;
@@ -205,16 +223,19 @@ int monitor(double runfor, boost::uint64_t pause)
       // we're probably either starting or stopping
       run_state = hpx::state_running;
     }
-    else run_state = (rt->get_thread_manager().status());
-    std::cout << "hpx runtime state is " << (int)run_state << std::endl;
+    else run_state = rt->get_state();
+    std::cout << "monitor : std :" << std::this_thread::get_id() << " hpx :" << hpx::this_thread::get_id() << " runtime state is " << (int)run_state << std::endl;
 
-    // stop collecting data when the runtime is exiting
-    // @TODO find out why quit does not work.
-    bool closing = hpx::threads::threadmanager_is(hpx::state_pre_shutdown);
-    if (closing) return 0;
+    if (run_state == hpx::state_running)
+    {
+        hpx::threads::executors::generic_thread_pool_executor exec(
+            hpx::this_thread::get_executor());
 
-    // Schedule a suspend/wakeup after each check
-    hpx::this_thread::suspend(pause);
+        exec.add_after(
+            boost::chrono::milliseconds(pause),
+            hpx::util::bind(&monitor, (std::max)(runfor-t.elapsed(), 0.0), pause),
+            "monitor");
+    }
   }
   // exit when thread is terminated or shutting down
   return 0;
@@ -226,7 +247,6 @@ int hpx_main(boost::program_options::variables_map& vm)
   //    LOG_DEBUG_MSG("About to instantiate custom scheduler");
   std::cout << "About to create custom scheduler" << std::endl;
   custom_scheduler my_scheduler;
-  std::cout << "About to create custom scheduler" << std::endl;
 
   my_scheduler.init();
 
@@ -237,25 +257,24 @@ int hpx_main(boost::program_options::variables_map& vm)
   // we do this so that we get as much info as possible, but it still can be made to wait
   // until a free work queue is available.
   // @TODO This will be moved into a custom scheduler once it is ready.
+  hpx::threads::executors::default_executor exec(
+    hpx::threads::thread_priority_critical);
+
+  exec.add(hpx::util::bind(&monitor, 5, 1000), "monitor");
+
+
+  //
   hpx::error_code ec(hpx::lightweight);
-  hpx::applier::register_thread_nullary(
-    hpx::util::bind(&monitor, 10, 1000),
-    "monitor",
+  my_scheduler.register_thread_nullary(
+    hpx::util::bind(&demo, 15, 1000),
+    "demo",
     hpx::threads::pending, true, hpx::threads::thread_priority_critical,
     -1, hpx::threads::thread_stacksize_default, ec);
 
 
-//  {
+  hpx::this_thread::sleep_for(boost::chrono::seconds(10));
 
-    //
-    my_scheduler.register_thread_nullary(
-            hpx::util::bind(&demo, 10, 1000),
-            "demo",
-            hpx::threads::pending, true, hpx::threads::thread_priority_critical,
-            -1, hpx::threads::thread_stacksize_default, ec);
-
-
-//  }
+  my_scheduler.stop();
 
   return hpx::finalize();
 }
