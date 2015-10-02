@@ -159,6 +159,17 @@ target_link_libraries(spinsolve
 target_compile_definitions(spinsolve PUBLIC -DAPP_BINARY_NAME=\"$<TARGET_FILE:spinsolve>\")
 
 #--------------------------------------------------
+# Exe
+#--------------------------------------------------
+add_executable(sched_test src/scheduler_test.cpp)
+hpx_setup_target(sched_test)
+target_link_libraries(sched_test 
+    iostreams_component 
+    ${Boost_LIBRARIES}
+)
+target_compile_definitions(sched_test PUBLIC -DAPP_BINARY_NAME=\"$<TARGET_FILE:spinsolve>\")
+
+#--------------------------------------------------
 # Exe, reference code that runs on single local thread
 #--------------------------------------------------
 add_definitions(-DHPX_APPLICATION_EXPORTS)
