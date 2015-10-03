@@ -51,6 +51,7 @@ cat << _EOF_ > ./submit-job.bash
 #SBATCH --job-name=$JOB_NAME
 #SBATCH --time=$2:$3:00
 #SBATCH --nodes=$4
+#SBATCH --exclusive
 $PARTITION
 $ACCOUNT
 $RESERVATION
@@ -61,7 +62,7 @@ export LD_LIBRARY_PATH=/apps/monch/mpc/1.0.1/lib:/apps/monch/mpfr/3.1.2/lib:/app
 
 cd /mnt/lnec/biddisco/build/spinmaster
 
-CMD="srun --ntasks=$NSERVERS --ntasks-per-node=1 --exclusive bin/spinsolve --hpx:ignore-batch-env --hpx:agas=$5 --hpx:connect"
+CMD="srun --ntasks=$NSERVERS --ntasks-per-node=1 bin/spinsolve --hpx:ignore-batch-env --hpx:agas=$5 --hpx:connect"
 echo "command to run is "\$CMD
 
 eval "\$CMD"
