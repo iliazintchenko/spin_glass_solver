@@ -8,7 +8,9 @@
 #include <hpx/lcos/local/mutex.hpp>
 #include <hpx/lcos/local/shared_mutex.hpp>
 //
-
+#include <hpx/parallel/execution_policy.hpp>
+#include "hpx/runtime/threads/executors/thread_pool_os_executors.hpp"
+//
 // Boost includes
 #include <boost/program_options.hpp>
 #include <boost/lexical_cast.hpp>
@@ -274,12 +276,15 @@ hpx::future<int> init_node(const hpx::id_type locality)
 
 //----------------------------------------------------------------------------
 // Test we can execute a shell command and get the result
+// ip route get 8.8.8.8 | awk 'NR==1 {print $NF}'
 //----------------------------------------------------------------------------
 void test_shell_command(const std::string &name, int rank)
 {
-    std::vector<std::string> command_list;
-    command_list.push_back("hostname");
-    std::vector<std::string> result = ExecuteAndCapture(command_list, 30.0, false);
+    std::vector<std::string> command_list = {
+      "ip", "route", "get", "8.8.8.8", "|", "awk", "'NR==1 {print $NF}'"
+    };
+//    command_list.push_back("hostname");
+    std::vector<std::string> result = ExecuteAndCapture(command_list, 30.0, true);
     for (auto & str_return : result) {
         std::cout << "Locality " << name.c_str() << " with rank : " << rank << " : ";
         std::cout << str_return.c_str() << std::endl;
@@ -473,6 +478,8 @@ int add_nodes_slurm(int N, int hours, int mins,
         const std::string &account,
         const std::string &reservation)
 {
+    static int num_jobs = 1;
+    std::string job_name = "spinsolve_" + boost::lexical_cast<std::string>(num_jobs++);
     // script params
     // "Usage : %1:Session name ($1)"
     // "        %2:Hours needed ($2)"
@@ -489,7 +496,7 @@ int add_nodes_slurm(int N, int hours, int mins,
     //
     std::vector<std::string> command_list;
     command_list.push_back(script);
-    command_list.push_back("spinsolve_worker");
+    command_list.push_back(job_name.c_str());
     command_list.push_back(std::to_string(hours));
     command_list.push_back(std::to_string(mins));
     command_list.push_back(std::to_string(N));
@@ -604,7 +611,7 @@ int hpx_main(boost::program_options::variables_map& vm)
     int agas = boost::lexical_cast<std::size_t>(hpx::get_config_entry("hpx.agas.port", 0));
     std::cout <<"Locality " << name.c_str() << " Rank " << rank << " Using port number " << port << " and agas " << agas << std::endl;
 
-    //test_shell_command(name, rank);
+    test_shell_command(name, rank);
 
     if (rank!=0) {
         // although we should be connected to the console node, we send
@@ -658,25 +665,32 @@ int hpx_main(boost::program_options::variables_map& vm)
     hpx::future<int> fut = init_node(here);
     fut.get();
 
+
+    hpx::threads::executors::local_priority_queue_os_executor exec;
+
     // instead of executing a normal async call using
     //   hpx::async(monitor, -1, 1000);
     // we will manually create a high-priority thread to poll the performance counters
     // we do this so that we get as much info as possible, but it still can be made to wait
     // until a free work queue is available.
     // @TODO This will be moved into a custom scheduler once it is ready.
+    hpx::apply(exec, &monitor, -1, 1000);
+/*
     hpx::error_code ec(hpx::lightweight);
     hpx::applier::register_thread_nullary(
             hpx::util::bind(&monitor, -1, 1000),
             "monitor",
             hpx::threads::pending, true, hpx::threads::thread_priority_critical,
             -1, hpx::threads::thread_stacksize_default, ec);
-
+*/
     //
     LOG_DEBUG_MSG("About to instantiate custom scheduler");
     std::cout << "About to create custom schedluer"<<std::endl;
-    custom_scheduler my_scheduler;
-    std::cout << "About to create custom schedluer"<<std::endl;
 
+    hpx::apply(exec, &demo, 42);
+
+/*
+    custom_scheduler my_scheduler;
     my_scheduler.register_thread_nullary(
             hpx::util::bind(&demo, 42),
             "demo",
@@ -684,6 +698,7 @@ int hpx_main(boost::program_options::variables_map& vm)
             -1, hpx::threads::thread_stacksize_default, ec);
 
     std::cout << "created custom schedluer"<<std::endl;
+*/
 
     //
     // create a fire and forget poll stdin thread for input commands
