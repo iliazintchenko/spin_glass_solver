@@ -21,6 +21,7 @@
 #include <chrono>
 #include <vector>
 #include <map>
+#include <memory>
 
 // Solver related includes
 #include "spin_glass_solver_defines.h"
@@ -128,7 +129,7 @@ namespace spinsolver {
     std::string                             account;
     std::string                             reservation;
     //
-    boost::shared_ptr<hamiltonian_type> hamiltonian;
+    std::shared_ptr<hamiltonian_type> hamiltonian;
     // on each node, we have one solver_manager instance
     solver_manager                      scheduler;
 }
@@ -182,7 +183,7 @@ int set_solver_state(const hpx::id_type &locality, spinsolver::status state)
 int add_solver_state(const hpx::id_type &locality, spinsolver::status state)
 {
     LOG_DEBUG_MSG("taking state_mutex : action received from locality " << locality);
-    boost::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
+    std::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
 set_solver_state(locality, state);
     LOG_DEBUG_MSG("releasing state_mutex add_solver_state" << locality);
     return 1;
@@ -261,7 +262,7 @@ hpx::future<int> init_node(const hpx::id_type locality)
         {
             solver_manager::solver_ptr wrappedSolver = spinsolver::scheduler.getSolver();
             LOG_DEBUG_MSG("taking state_mutex : changing solver state data for locality " << locality);
-            boost::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
+            std::unique_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
             set_solver_state_data(locality, {spinsolver::status::READY, wrapper, counter, spinsolver::os_threads, 0.0});
             wrappedSolver->addSolverId(wrapper);
             LOG_DEBUG_MSG("releasing state_mutex (init_node)" << locality);
@@ -295,10 +296,10 @@ void test_shell_command(const std::string &name, int rank)
 // A monitoring thread which queries the amount of work on a locality
 // Experimental for future use.
 //----------------------------------------------------------------------------
-void stop_monitor(hpx::promise<void> p)
+void stop_monitor(std::shared_ptr<hpx::promise<void>> p)
 {
     // Set the future to terminate the monitor thread
-    p.set_value();
+    p->set_value();
 }
 
 int demo(int x)
@@ -318,9 +319,9 @@ int monitor(double runfor, boost::uint64_t pause)
     hpx::util::high_resolution_timer t;
 
     // stop this thread when shutdown is initiated
-    hpx::promise<void> stop_flag;
-    hpx::register_shutdown_function(boost::bind(&stop_monitor, stop_flag));
-    hpx::future<void> f = stop_flag.get_future();
+    std::shared_ptr<hpx::promise<void>> stop_flag = std::make_shared<hpx::promise<void>>();
+    hpx::future<void> f = stop_flag->get_future();
+    hpx::register_shutdown_function(hpx::util::bind(&stop_monitor, std::move(stop_flag)));
 
     // numranks connectd
     uint64_t initial_ranks = hpx::get_num_localities().get();
@@ -356,7 +357,7 @@ int monitor(double runfor, boost::uint64_t pause)
         //
         {
             LOG_DEBUG_MSG("Before looping over localities to get performance counters ");
-            boost::shared_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
+            std::shared_lock<hpx::lcos::local::shared_mutex> lock(spinsolver::state_mutex);
             final_counters.resize(spinsolver::locality_states.size());
             //
             int index = 0;
@@ -649,7 +650,7 @@ int hpx_main(boost::program_options::variables_map& vm)
     // Load the hamiltonian
     // @todo, add support for multiple solvers with their own H
     //
-    spinsolver::hamiltonian = boost::make_shared<hamiltonian_type>(infile);
+    spinsolver::hamiltonian = std::make_shared<hamiltonian_type>(infile);
 
     // for each locality, trigger the initialize_solver action so that all ranks are initialized
     // and ready to receive work. For now we pass the Hamiltonian as a parameter, but

@@ -4,6 +4,7 @@
 #include <hpx/hpx.hpp>
 //
 #include <boost/lexical_cast.hpp>
+#include <boost/pointer_cast.hpp>
 //
 #include "sa_solver.hpp"
 #include "solver_wrapper.hpp"
@@ -25,7 +26,7 @@ public:
   hpx::naming::id_type       _agas_Wrapper_id;
 
   typedef wrapped_solver_class<sa_solver>::result_type result_type;
-  typedef boost::shared_ptr<wrapped_solver_class<sa_solver>> solver_ptr;
+  typedef std::shared_ptr<wrapped_solver_class<sa_solver>> solver_ptr;
   solver_ptr _solver_instance;
 
   // for scheduling, we store info about threads/ranks
@@ -62,7 +63,7 @@ public:
     hpx::agas::register_name_sync("/solver_wrapper/" + boost::lexical_cast<std::string>(_rank), _agas_Wrapper_id);
 
     // from the registered object, get the actual pointer to the local class
-    _solver_instance = boost::dynamic_pointer_cast<wrapped_solver_class<sa_solver>>(
+    _solver_instance = std::dynamic_pointer_cast<wrapped_solver_class<sa_solver>>(
         hpx::get_ptr_sync<wrapped_solver_class<sa_solver>>(_agas_Wrapper_id)
     );
   }

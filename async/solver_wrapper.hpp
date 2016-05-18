@@ -12,6 +12,8 @@
 #include <queue>
 #include <cmath>
 #include <map>
+#include <mutex>
+#include <shared_mutex>
 
 #define RDMAHELPER_DISABLE_LOGGING 1
 #include "RdmaLogging.h"
@@ -86,7 +88,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
     void setSolverIds(const std::vector<hpx::id_type> &ids) {
         // unique lock for exclusive write access
         LOG_DEBUG_MSG("taking solver_id_mutex in setSolverIds");
-        boost::unique_lock<solver_mutex_type> lock(_solver_id_mutex);
+        std::unique_lock<solver_mutex_type> lock(_solver_id_mutex);
         _solver_ids = ids;
         _nranks = _solver_ids.size();
         _new_solver.store(true);
@@ -100,7 +102,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
     void addSolverId(const hpx::id_type &id) {
         // unique lock for exclusive write access
         LOG_DEBUG_MSG("taking solver_id_mutex in addSolverId");
-        boost::unique_lock<solver_mutex_type> lock(_solver_id_mutex);
+        std::unique_lock<solver_mutex_type> lock(_solver_id_mutex);
         _solver_ids.push_back(id);
         _nranks = _solver_ids.size();
         _new_solver.store(true);
@@ -118,7 +120,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
         while (hpx::is_running() && !self->_abort) {
             // shared lock solver_ids for read access
             LOG_DEBUG_MSG("taking solver_id_mutex in remove_completed_solver_steps");
-            boost::shared_lock<solver_mutex_type> lock(self->_solver_id_mutex);
+            std::shared_lock<solver_mutex_type> lock(self->_solver_id_mutex);
             for (auto s : self->_solver_ids) {
                 std::queue<future_type> &tasks = self->_async_results[s];
                 while (!tasks.empty()) {
@@ -139,7 +141,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
             }
             lock.unlock();
             LOG_DEBUG_MSG("releasing solver_id_mutex in remove_completed_solver_steps");
-            hpx::this_thread::sleep_for(boost::chrono::milliseconds(250));
+            hpx::this_thread::sleep_for(std::chrono::milliseconds(250));
         }
     }
 
@@ -194,7 +196,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
             if (remaining>0) do {
                 enough = true;
                 LOG_DEBUG_MSG("taking sover_id_mutex in spawn loop");
-                boost::shared_lock<solver_mutex_type> lock(_solver_id_mutex);
+                std::shared_lock<solver_mutex_type> lock(_solver_id_mutex);
                 for (auto s : _solver_ids) {
                     if (_async_results[s].size() < (_os_threads*5)) {
                         future_type fut = hpx::async(solve_step, s, args..., seed + local_seed_offset);
@@ -218,7 +220,7 @@ struct wrapped_solver_class : hpx::components::simple_component_base<wrapped_sol
             last_remaining = _total_remaining;
             //
             std::cout << (formatter % _total_completed % _total_remaining % solves_this_iteration % elapsed_seconds.count() % solves_per_second);
-            hpx::this_thread::sleep_for(boost::chrono::milliseconds(1000));
+            hpx::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
 
         std::cout << "Solver Wrapper, waiting for completed thread" << std::endl;

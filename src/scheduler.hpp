@@ -66,7 +66,7 @@ public:
     }
 
     void init() {
-      boost::unique_lock<mutex_type> lk(mtx_);
+      std::unique_lock<mutex_type> lk(mtx_);
 
       init_affinity_data affinity_data;
       pool_.init(1, affinity_data);
